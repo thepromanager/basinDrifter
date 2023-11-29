@@ -57,6 +57,17 @@ class World():
         self.player.update()
     def draw(self):
         self.player.draw()
+    def setInbounds(self,x,y):
+        if(x>1300):
+            x-=1300
+        if(x<0):
+            x+=1300
+        if(y>700):
+            y-=700
+        if(y<0):
+            y+=700
+        return (x,y)
+
 class Player():
     idleImage = loadImage("player.png")
     def __init__(self, x=20, y=20):
@@ -75,6 +86,7 @@ class Player():
             self.vehicle.move(pressed)
             self.x=self.vehicle.x
             self.y=self.vehicle.y
+
 
         #if(not pressed[pygame.K_e]):
         #    self.eDown = False
@@ -146,6 +158,7 @@ class Vehicle():
             self.brake()
         if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
             self.accelerate()
+        (self.x,self.y)=world.setInbounds(self.x,self.y)
     def turn(self,direction):
         tot=self.totalSpeed()
         self.angle+=direction*self.handling*min(self.turnTraction,tot)/self.topspeed
