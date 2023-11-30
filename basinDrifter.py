@@ -121,24 +121,35 @@ class Vehicle():
         self.topspeed = 10.0
         self.acc = 0.3
         self.friction = 0.99
-        #self.sideFriction = 0.95
-
+        
+        self.sideFriction = 1
+        self.forwardFriction = 0.99
+        
         self.braking = 0.9
         self.handling = 0.1
         self.traction = 0.1
         self.turnTraction = 10.0
         #self.drift = 
         self.image = None
+    def direction(self,shift=0):
+        return np.array([np.cos(self.angle+shift),np.sin(self.angle+shift)])
+
     def update(self):
         self.pos+=self.vel
-        self.vel=self.friction*self.vel
 
+        #self.vel=self.friction*self.vel
+        
         tot=self.totalSpeed()
         if(tot!=0):
+            forwardVel = self.direction()*(np.dot(self.vel,self.direction()))*self.forwardFriction
+            sideVel = self.direction(np.pi/2)*(np.dot(self.vel,self.direction(np.pi/2)))*self.sideFriction
+            print(self.vel)
+            self.vel = forwardVel + sideVel
+            print(self.vel)
 
             speedRemainder=max(tot-self.traction,0)
             traction=tot-speedRemainder
-            traction = traction*np.array([np.cos(self.angle),np.sin(self.angle)])
+            traction = traction*self.direction()
             remainder= self.vel*speedRemainder/tot
             self.vel=traction+remainder
         #pressed = pygame.key.get_pressed()
@@ -167,11 +178,11 @@ class Vehicle():
 
     def brake(self):
         self.vel*=self.braking
-        self.vel-=self.acc*np.array([np.cos(self.angle),np.sin(self.angle)])
+        self.vel-=self.acc*self.direction()
     
     def accelerate(self):
         if(self.totalSpeed()<self.topspeed):
-            self.vel+=self.acc*np.array([np.cos(self.angle),np.sin(self.angle)])
+            self.vel+=self.acc*self.direction()
         
     def draw(self):
         blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle-math.pi/2)
