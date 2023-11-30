@@ -47,15 +47,18 @@ class World():
     def __init__(self):
         self.player=None
         self.things = []
+        self.vehicles = []
     
     def generateWorld(self): 
         self.player = Player()
-        self.player.vehicle = RaceCar(20,20)
+        self.vehicles.append(RaceCar(200,200))
     def update(self):
-        for thing in self.things:
-            thing.update()
+        for vehicle in self.vehicles:
+            vehicle.update()
         self.player.update()
     def draw(self):
+        for vehicle in self.vehicles:
+            vehicle.draw()
         self.player.draw()
     def setInbounds(self,x,y):
         if(x>1300):
@@ -77,22 +80,26 @@ class Player():
         self.speed = gridSize//32
         self.image = Player.idleImage
         self.vehicle = None
+
     def update(self):
         pressed = pygame.key.get_pressed()
         if(not self.vehicle):
             self.move(pressed)
         else:
-            self.vehicle.update()
             self.vehicle.move(pressed)
             self.x=self.vehicle.x
             self.y=self.vehicle.y
 
 
-        #if(not pressed[pygame.K_e]):
-        #    self.eDown = False
-        #if(pressed[pygame.K_e] and not self.eDown):
-        #    self.eDown = True
-        #    self.use()
+        if(not pressed[pygame.K_LSHIFT]):
+            self.shiftDown = False
+        if(pressed[pygame.K_LSHIFT] and not self.shiftDown):
+            self.shiftDown = True
+            if self.vehicle == None:
+                self.enterClosestVehicle()
+            else:
+                self.exitVehicle()
+
     def move(self, pressed):
         speed = self.speed
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
@@ -103,6 +110,15 @@ class Player():
             self.y+=speed
         if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
             self.y-=speed
+
+    def enterClosestVehicle(self):#, vehicle):
+        self.vehicle = world.vehicles[0]
+        print("entered")
+
+    def exitVehicle(self):
+        self.vehicle = None
+        print("exited")
+        
     def draw(self):
         if(self.vehicle):
             self.vehicle.draw()
@@ -144,11 +160,7 @@ class Vehicle():
             self.vy=tractiony+remaindery
         #pressed = pygame.key.get_pressed()
         #self.move(pressed)
-        #if(not pressed[pygame.K_e]):
-        #    self.eDown = False
-        #if(pressed[pygame.K_e] and not self.eDown):
-        #    self.eDown = True
-        #    self.use()
+        (self.x,self.y)=world.setInbounds(self.x,self.y)
     def move(self, pressed):
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
             self.turn(1)
@@ -158,7 +170,6 @@ class Vehicle():
             self.brake()
         if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
             self.accelerate()
-        (self.x,self.y)=world.setInbounds(self.x,self.y)
     def turn(self,direction):
         tot=self.totalSpeed()
         self.angle+=direction*self.handling*min(self.turnTraction,tot)/self.topspeed
