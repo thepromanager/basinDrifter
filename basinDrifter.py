@@ -3,6 +3,7 @@ import random
 import time
 import os
 import math
+import numpy as np
 
 screenWidth = 1300
 screenHeight = 700
@@ -50,29 +51,31 @@ class World():
     
     def generateWorld(self): 
         self.player = Player()
-        self.player.vehicle = RaceCar(20,20)
+        self.player.vehicle = RaceCar()
     def update(self):
         for thing in self.things:
             thing.update()
         self.player.update()
     def draw(self):
         self.player.draw()
-    def setInbounds(self,x,y):
+    def setInbounds(self,pos):
+        x=pos[0]
+        y=pos[1]
         if(x>1300):
             x-=1300
+            print(x)
         if(x<0):
             x+=1300
         if(y>700):
             y-=700
         if(y<0):
             y+=700
-        return (x,y)
+        return np.array([x,y])
 
 class Player():
     idleImage = loadImage("player.png")
-    def __init__(self, x=20, y=20):
-        self.x = x
-        self.y = y
+    def __init__(self, pos=np.array([20,20])):
+        self.pos = pos
         self.size = 1
         self.speed = gridSize//32
         self.image = Player.idleImage
@@ -84,8 +87,7 @@ class Player():
         else:
             self.vehicle.update()
             self.vehicle.move(pressed)
-            self.x=self.vehicle.x
-            self.y=self.vehicle.y
+            self.pos=self.vehicle.pos
 
 
         #if(not pressed[pygame.K_e]):
@@ -96,52 +98,49 @@ class Player():
     def move(self, pressed):
         speed = self.speed
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
-            self.x+=speed
+            self.pos+=speed*np.array([1,0])
         if(pressed[pygame.K_a] or pressed[pygame.K_LEFT]):
-            self.x-=speed
+            self.pos+=speed*np.array([1,0])
         if(pressed[pygame.K_s] or pressed[pygame.K_DOWN]):
-            self.y+=speed
+            self.pos+=speed*np.array([0,1])
         if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
-            self.y-=speed
+            self.pos+=speed*np.array([0,1])
     def draw(self):
         if(self.vehicle):
             self.vehicle.draw()
         else:
-            gameDisplay.blit(self.image,(self.x,self.y)) #-gridSize*self.size
+            gameDisplay.blit(self.image,self.pos) #-gridSize*self.size
 
 class Vehicle():
     idleImage = loadImage("player.png")
-    def __init__(self, x=20, y=20):
-        self.x = x
-        self.y = y
-        self.angle = 0
-        self.vx = 0
-        self.vy = 0
+    def __init__(self, pos=np.array([20.0,20.0])):
+        self.pos = pos
+        self.angle = 0.0
+        self.vel = np.array([0.0,0.0])
 
-        self.topspeed = 10
-        self.acc = 0.5
+        self.topspeed = 10.0
+        self.acc = 0.3
         self.friction = 0.99
+        #self.sideFriction = 0.95
+
         self.braking = 0.9
         self.handling = 0.1
         self.traction = 0.1
-        self.turnTraction = 10
+        self.turnTraction = 10.0
         #self.drift = 
         self.image = None
     def update(self):
-        self.x+=self.vx
-        self.y+=self.vy
-        self.vx*=self.friction
-        self.vy*=self.friction
+        self.pos+=self.vel
+        self.vel=self.friction*self.vel
+
         tot=self.totalSpeed()
         if(tot!=0):
+
             speedRemainder=max(tot-self.traction,0)
             traction=tot-speedRemainder
-            tractionx = math.cos(self.angle)*traction
-            tractiony = math.sin(self.angle)*traction
-            remainderx= self.vx*speedRemainder/tot
-            remaindery= self.vy*speedRemainder/tot
-            self.vx=tractionx+remainderx
-            self.vy=tractiony+remaindery
+            traction = traction*np.array([np.cos(self.angle),np.sin(self.angle)])
+            remainder= self.vel*speedRemainder/tot
+            self.vel=traction+remainder
         #pressed = pygame.key.get_pressed()
         #self.move(pressed)
         #if(not pressed[pygame.K_e]):
@@ -158,33 +157,30 @@ class Vehicle():
             self.brake()
         if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
             self.accelerate()
-        (self.x,self.y)=world.setInbounds(self.x,self.y)
+        self.pos=world.setInbounds(self.pos)
     def turn(self,direction):
         tot=self.totalSpeed()
         self.angle+=direction*self.handling*min(self.turnTraction,tot)/self.topspeed
 
     def totalSpeed(self):
-        return (self.vx**2+self.vy**2)**(1/2)
+        return np.linalg.norm(self.vel)
 
     def brake(self):
-        self.vx*=self.braking
-        self.vy*=self.braking
-        self.vx-= math.cos(self.angle)*self.acc
-        self.vy-= math.sin(self.angle)*self.acc
+        self.vel*=self.braking
+        self.vel-=self.acc*np.array([np.cos(self.angle),np.sin(self.angle)])
     
     def accelerate(self):
         if(self.totalSpeed()<self.topspeed):
-            self.vx+= math.cos(self.angle)*self.acc
-            self.vy+= math.sin(self.angle)*self.acc
+            self.vel+=self.acc*np.array([np.cos(self.angle),np.sin(self.angle)])
         
     def draw(self):
-        blitRotate(gameDisplay, self.image, (self.x,self.y), (gridSize//2, gridSize//2), self.angle-math.pi/2)
+        blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle-math.pi/2)
         #gameDisplay.blit(self.image,(self.x,self.y)) #-gridSize*self.size
 
 class RaceCar(Vehicle):
     idleImage = loadImage("car.png")
-    def __init__(self, x=20, y=20):
-        super().__init__(x,y)
+    def __init__(self, pos=np.array([20.0,20.0])):
+        super().__init__(pos)
         self.image = RaceCar.idleImage
 
 def main():
