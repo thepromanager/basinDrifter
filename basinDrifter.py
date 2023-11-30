@@ -127,7 +127,7 @@ class Player():
         bestVehicle = None
         for vehicle in world.vehicles:
             dist = np.linalg.norm(vehicle.pos - self.pos)
-            print(dist, bestDist)
+            #print(dist, bestDist)
             if dist < bestDist:
                 bestDist = dist
                 bestVehicle = vehicle
@@ -192,7 +192,10 @@ class Vehicle():
         self.sideFriction = 0.95
         self.forwardFriction = 0.99
         self.braking = 0.9
+        self.brakestop = 0.1
         self.handling = 0.1
+
+        self.pastPos = []
         #self.traction = 0.1
         #self.turnTraction = 10.0
         #self.drift = 
@@ -202,6 +205,11 @@ class Vehicle():
 
     def update(self):
 
+        # save position history for line
+        self.pastPos.append((np.ceil(self.pos)).astype(int))
+        if(len(self.pastPos)>240):
+            self.pastPos.pop(0)
+
         # move
         self.pos+=self.vel
 
@@ -210,10 +218,8 @@ class Vehicle():
         tot=self.totalSpeed()
         if(tot!=0):
             forwardVel = self.direction()*(np.dot(self.vel,self.direction()))*self.forwardFriction
-            sideVel = self.direction(np.pi/2)*(np.dot(self.vel,self.direction(np.pi/2)))*self.sideFriction
-            print(self.vel)
+            sideVel = self.direction(np.pi/2)*(np.dot(self.vel,self.direction(np.pi/2)))*self.sideFriction            
             self.vel = forwardVel + sideVel
-            print(self.vel)
             """
             speedRemainder=max(tot-self.traction,0)
             traction=tot-speedRemainder
@@ -233,7 +239,12 @@ class Vehicle():
     def collide(self, other):
         speed = np.linalg.norm(self.vel)
         other.hurt(speed*self.size/16) #mass?
-        self.vel *= 0
+        if(isinstance(other,Vehicle)):
+
+            other.vel+=self.vel
+            self.vel=-0.1*self.vel
+        else:
+            self.vel *= 0
 
     def hurt(self, damage):
         pass
@@ -256,8 +267,18 @@ class Vehicle():
         return np.linalg.norm(self.vel)
 
     def brake(self):
-        self.vel*=self.braking
-        self.vel-=self.acc*self.direction()
+        tot=self.totalSpeed()
+        if(tot!=0):
+            forwardVel = (np.dot(self.vel,self.direction()))*self.braking
+            if(forwardVel<self.brakestop):
+                forwardVel=0
+            else:
+                forwardVel-=self.brakestop/2
+            sideVel = (np.dot(self.vel,self.direction(np.pi/2)))*1
+            self.vel = self.direction()*forwardVel + self.direction(np.pi/2)*sideVel
+
+        #self.vel*=self.braking
+        #self.vel-=self.acc*self.direction()
     
     def accelerate(self):
         if(self.totalSpeed()<self.topspeed):
@@ -266,6 +287,13 @@ class Vehicle():
     def draw(self):
         blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle-math.pi/2)
         #gameDisplay.blit(self.image,(self.x,self.y)) #-gridSize*self.size
+
+        #Draw line
+        for i in range(len(self.pastPos)):
+            pos=self.pastPos[i]
+            if(i%2==0):
+
+                gameDisplay.set_at(pos, (255,255,255))
 
 class RaceCar(Vehicle):
     idleImage = loadImage("vehicles/car.png")
