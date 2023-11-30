@@ -52,22 +52,28 @@ class World():
     
     def generateWorld(self): 
         self.player = Player()
-        self.vehicles.append(RaceCar(np.array([200.0,200.0])))
+        self.vehicles.append(RaceCar(np.array([150.0, 200.0])))
+        self.vehicles.append(SlowCar(np.array([200.0, 100.0])))
+        self.things.append(Animus(np.array([200.0, 300.0])))
 
     def update(self):
         for vehicle in self.vehicles:
             vehicle.update()
+        for thing in self.things:
+            thing.update()
         self.player.update()
+
     def draw(self):
         for vehicle in self.vehicles:
             vehicle.draw()
+        for thing in self.things:
+            thing.draw()
         self.player.draw()
     def setInbounds(self,pos):
         x=pos[0]
         y=pos[1]
         if(x>1300):
             x-=1300
-            print(x)
         if(x<0):
             x+=1300
         if(y>700):
@@ -80,7 +86,7 @@ class Player():
     idleImage = loadImage("player.png")
     def __init__(self, pos=np.array([20,20])):
         self.pos = pos
-        self.size = 1
+        self.size = 16
         self.speed = gridSize//32
         self.image = Player.idleImage
         self.vehicle = None
@@ -115,33 +121,76 @@ class Player():
             self.pos+=speed*np.array([0,-1])
 
     def enterClosestVehicle(self):#, vehicle):
-        self.vehicle = world.vehicles[0]
-        print("entered")
+
+        # find closest vehicle
+        bestDist = 50
+        bestVehicle = None
+        for vehicle in world.vehicles:
+            dist = np.linalg.norm(vehicle.pos - self.pos)
+            print(dist, bestDist)
+            if dist < bestDist:
+                bestDist = dist
+                bestVehicle = vehicle
+
+        # enter
+        if bestVehicle:
+            self.vehicle = bestVehicle
 
     def exitVehicle(self):
         self.vehicle = None
-        print("exited")
        
     def draw(self):
         if(self.vehicle):
             self.vehicle.draw()
         else:
-            gameDisplay.blit(self.image,self.pos) #-gridSize*self.size
+            gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
+
+class Enemy(): # or creature rather
+
+    def __init__(self, pos=np.array([20.0,20.0])):
+        self.pos = pos
+        self.size = 16
+        self.angle = 0
+        self.vehicle = None
+
+    def update(self):
+        pass
+
+    def hurt(self, damage):
+        if damage > 10:
+            if self in world.things:
+                world.things.remove(self)
+
+    def draw(self):
+        blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle-math.pi/2)
+        
+class Animus(Enemy): # because
+    images = [loadImage("things/beetle/beetle1.png"),loadImage("things/beetle/beetle2.png")]
+    def __init__(self, pos=np.array([20.0,20.0])):
+        super().__init__(pos)
+        self.image = Animus.images[0]
+        self.size = 16
+
+    def update(self):
+        direction = world.player.pos - self.pos
+        direction = direction/np.linalg.norm(direction)
+        self.angle = np.arctan2(direction[1], direction[0])
+        self.pos += direction
+        self.image = Animus.images[random.randint(0,1)]
+
 
 class Vehicle():
     idleImage = loadImage("player.png")
     def __init__(self, pos=np.array([20.0,20.0])):
+        self.size = 16
         self.pos = pos
         self.angle = 0.0
         self.vel = np.array([0.0,0.0])
 
         self.topspeed = 10.0
         self.acc = 0.3
-        self.friction = 0.99
-        
         self.sideFriction = 0.95
         self.forwardFriction = 0.99
-        
         self.braking = 0.9
         self.handling = 0.1
         #self.traction = 0.1
@@ -152,10 +201,12 @@ class Vehicle():
         return np.array([np.cos(self.angle+shift),np.sin(self.angle+shift)])
 
     def update(self):
+
+        # move
         self.pos+=self.vel
 
+        # friction
         #self.vel=self.friction*self.vel
-        
         tot=self.totalSpeed()
         if(tot!=0):
             forwardVel = self.direction()*(np.dot(self.vel,self.direction()))*self.forwardFriction
@@ -170,9 +221,23 @@ class Vehicle():
             remainder= self.vel*speedRemainder/tot
             self.vel=traction+remainder
             """
-        #pressed = pygame.key.get_pressed()
-        #self.move(pressed)
+
+        for i in world.things + world.vehicles: #collidibles ?
+            if i != self:
+                if np.linalg.norm(self.pos - i.pos)<self.size + i.size:
+                    self.collide(i)
+
+        # inbounds
         self.pos=world.setInbounds(self.pos)
+
+    def collide(self, other):
+        speed = np.linalg.norm(self.vel)
+        other.hurt(speed*self.size/16) #mass?
+        self.vel *= 0
+
+    def hurt(self, damage):
+        pass
+
     def move(self, pressed):
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
             self.turn(1)
@@ -203,10 +268,29 @@ class Vehicle():
         #gameDisplay.blit(self.image,(self.x,self.y)) #-gridSize*self.size
 
 class RaceCar(Vehicle):
-    idleImage = loadImage("car.png")
+    idleImage = loadImage("vehicles/car.png")
     def __init__(self, pos=np.array([20.0,20.0])):
         super().__init__(pos)
         self.image = RaceCar.idleImage
+
+        self.topspeed = 10.0
+        self.acc = 0.3
+        self.sideFriction = 0.95
+        self.forwardFriction = 0.99
+        self.braking = 0.9
+        self.handling = 0.1
+class SlowCar(Vehicle):
+    idleImage = loadImage("vehicles/car2.png")
+    def __init__(self, pos=np.array([20.0,20.0])):
+        super().__init__(pos)
+        self.image = SlowCar.idleImage
+
+        self.topspeed = 5.0
+        self.acc = 0.15
+        self.sideFriction = 0.95
+        self.forwardFriction = 0.98
+        self.braking = 0.95
+        self.handling = 0.05
 
 def main():
     running = True
@@ -220,7 +304,7 @@ def main():
 
 
         # DRAW
-        gameDisplay.fill((25,25,105))
+        gameDisplay.fill((55,105,55))
         world.draw()
 
         pygame.display.update() # flip?
