@@ -44,20 +44,43 @@ def blitRotate(surf,image, pos, originPos, angle):
     rotated_image = pygame.transform.rotate(image, angle+180)
     surf.blit(rotated_image, origin)
 
+class Camera():
+
+    def __init__(self, pos = np.array([0.,0.])):
+        self.pos = pos
+        self.angle = 0.
+
+    def update(self):
+        followSpeed = 0.5
+        angleSpeed = 0.05
+        self.pos = self.pos*(1-followSpeed) + world.player.pos*followSpeed
+        targetAngle = (world.player.angle + math.pi/2 - self.angle + math.pi) % (math.pi*2) + self.angle - math.pi # camera has player rotated 90 (so why isnt it -pi/2 ?!?)
+        self.angle = self.angle*(1-angleSpeed) + targetAngle*angleSpeed
+
+    def blitImage(self, surf, image, pos, originPos, angle):
+        cameraAngle = self.angle
+        R = np.array([[np.cos(-cameraAngle), -np.sin(-cameraAngle)],
+                      [np.sin(-cameraAngle),  np.cos(-cameraAngle)]])
+        #print(R @ (pos - world.player.pos))
+        blittingPos = np.array([screenWidth//2, screenHeight//2+50]) + R@(pos - self.pos) # rotate position relative to player
+        blittingAngle = angle - cameraAngle
+        blitRotate(surf,image, blittingPos, originPos, blittingAngle)
+
 class World():
     def __init__(self):
         self.player=None
         self.things = []
         self.vehicles = []
+        self.camera = Camera()
     
     def generateWorld(self): 
         self.player = Player()
         self.vehicles.append(RaceCar(np.array([150.0, 200.0])))
         self.vehicles.append(SlowCar(np.array([200.0, 100.0])))
-        for i in range(3):
-            self.things.append(Beetle(np.array([1000.0*random.random(), 600.0*random.random()])))
-        for i in range(13):
-            self.things.append(Box(np.array([1000.0*random.random(), 600.0*random.random()])))
+        for i in range(5):
+            self.things.append(Beetle(np.array([2000.0*random.random(), 2000.0*random.random()])))
+        for i in range(20):
+            self.things.append(Box(np.array([2000.0*random.random(), 2000.0*random.random()])))
 
     def update(self):
         for vehicle in self.vehicles:
@@ -65,6 +88,7 @@ class World():
         for thing in self.things:
             thing.update()
         self.player.update()
+        self.camera.update()
 
     def draw(self):
         for vehicle in self.vehicles:
@@ -72,17 +96,18 @@ class World():
         for thing in self.things:
             thing.draw()
         self.player.draw()
+
     def setInbounds(self,pos):
         x=pos[0]
         y=pos[1]
-        if(x>1300):
-            x-=1300
-        if(x<0):
-            x+=1300
-        if(y>700):
-            y-=700
-        if(y<0):
-            y+=700
+        if(x>self.player.pos[0]+1000): # the world is a 1000x1000 torus around the player
+            x-=2000
+        if(x<self.player.pos[0]-1000):
+            x+=2000
+        if(y>self.player.pos[1]+1000):
+            y-=2000
+        if(y<self.player.pos[1]-1000):
+            y+=2000
         return np.array([x,y])
 
 class Player():
@@ -90,7 +115,7 @@ class Player():
     idleImage = loadImage("player3.png")
     def __init__(self, pos=np.array([20.0,20.0])):
         self.pos = pos
-        self.angle = 0
+        self.angle = 0.
         self.vel = np.array([0.0,0.0])
         self.size = 16
         self.speed = gridSize//32
@@ -115,6 +140,7 @@ class Player():
             self.vehicle.move(pressed)
             self.pos = self.vehicle.pos
             self.vel = self.vehicle.vel/2
+            self.angle = self.vehicle.angle
 
 
         if(not pressed[pygame.K_LSHIFT]):
@@ -126,10 +152,22 @@ class Player():
             else:
                 self.exitVehicle()
 
-        # inbounds
-        self.pos=world.setInbounds(self.pos)
+        # inbounds unnecessary since the world warps to greet the player
+        #self.pos=world.setInbounds(self.pos)
 
     def move(self, pressed):
+        if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
+            self.angle += 0.1
+        if(pressed[pygame.K_a] or pressed[pygame.K_LEFT]):
+            self.angle -= 0.1
+        if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
+            self.vel = np.array([math.cos(self.angle), math.sin(self.angle)]) * self.speed
+        elif(pressed[pygame.K_s] or pressed[pygame.K_DOWN]):
+            self.vel = np.array([math.cos(self.angle), math.sin(self.angle)]) * self.speed * -0.5
+        else:
+            self.vel = 0
+
+    def oldOrhogonalMove(self, pressed):
         speed = self.speed
         direction = np.array([0.0,0.0])
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
@@ -143,8 +181,8 @@ class Player():
         hyp = np.linalg.norm(direction)
         if hyp > 0:
             direction = speed * direction / hyp
+            self.angle = np.arctan2(direction[1], direction[0])
         self.vel = direction
-        self.angle = np.arctan2(direction[1], direction[0])
 
     def enterClosestVehicle(self):#, vehicle):
 
@@ -169,7 +207,7 @@ class Player():
         if(self.vehicle):
             self.vehicle.draw()
         else:
-            blitRotate(gameDisplay, self.image, self.pos, np.array([32.0,32.0]), self.angle)
+            world.camera.blitImage(gameDisplay, self.image, self.pos, np.array([32.0,32.0]), self.angle)
             #gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
 
 class Enemy(): # or creature rather
@@ -203,7 +241,7 @@ class Enemy(): # or creature rather
             self.health -= damage
 
     def draw(self):
-        blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle)
+        world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle)
         
 class Box(Enemy):
     idleImage = loadImage("things/box.png")
@@ -349,7 +387,7 @@ class Vehicle():
             self.vel+=self.acc*self.direction()
         
     def draw(self):
-        blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle)
+        world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle)
         #gameDisplay.blit(self.image,(self.x,self.y)) #-gridSize*self.size
 
         #Draw line
