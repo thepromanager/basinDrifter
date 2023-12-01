@@ -23,7 +23,7 @@ def loadImage(textureName, size=gridSize):
 def blitRotate(surf,image, pos, originPos, angle):
 
     #ifx rad ddeg
-    angle = -angle*180/math.pi
+    angle = 180-angle*180/math.pi
 
     # calcaulate the axis aligned bounding box of the rotated image
     w, h       = image.get_size()
@@ -54,7 +54,10 @@ class World():
         self.player = Player()
         self.vehicles.append(RaceCar(np.array([150.0, 200.0])))
         self.vehicles.append(SlowCar(np.array([200.0, 100.0])))
-        self.things.append(Animus(np.array([200.0, 300.0])))
+        for i in range(3):
+            self.things.append(Beetle(np.array([1000.0*random.random(), 600.0*random.random()])))
+        for i in range(13):
+            self.things.append(Box(np.array([1000.0*random.random(), 600.0*random.random()])))
 
     def update(self):
         for vehicle in self.vehicles:
@@ -83,21 +86,35 @@ class World():
         return np.array([x,y])
 
 class Player():
-    idleImage = loadImage("player.png")
-    def __init__(self, pos=np.array([20,20])):
+    sidleImage = loadImage("player.png")
+    idleImage = loadImage("player3.png")
+    def __init__(self, pos=np.array([20.0,20.0])):
         self.pos = pos
+        self.angle = 0
+        self.vel = np.array([0.0,0.0])
         self.size = 16
         self.speed = gridSize//32
         self.image = Player.idleImage
         self.vehicle = None
+        self.health = 10
 
     def update(self):
         pressed = pygame.key.get_pressed()
         if(not self.vehicle):
-            self.move(pressed)
+            speed = np.linalg.norm(self.vel)
+            if speed>3:
+                self.health -= speed
+                self.vel *= 0.99
+                self.image = Player.sidleImage
+                self.angle = random.random()*math.pi*2
+            else:
+                self.image = Player.idleImage
+                self.move(pressed)
+            self.pos += self.vel
         else:
             self.vehicle.move(pressed)
-            self.pos=self.vehicle.pos
+            self.pos = self.vehicle.pos
+            self.vel = self.vehicle.vel/2
 
 
         if(not pressed[pygame.K_LSHIFT]):
@@ -109,16 +126,25 @@ class Player():
             else:
                 self.exitVehicle()
 
+        # inbounds
+        self.pos=world.setInbounds(self.pos)
+
     def move(self, pressed):
         speed = self.speed
+        direction = np.array([0.0,0.0])
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
-            self.pos+=speed*np.array([1,0])
+            direction+=np.array([1.0,0.0])
         if(pressed[pygame.K_a] or pressed[pygame.K_LEFT]):
-            self.pos+=speed*np.array([-1,0])
+            direction+=np.array([-1.0,0.0])
         if(pressed[pygame.K_s] or pressed[pygame.K_DOWN]):
-            self.pos+=speed*np.array([0,1])
+            direction+=np.array([0.0,1.0])
         if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
-            self.pos+=speed*np.array([0,-1])
+            direction+=np.array([0.0,-1.0])
+        hyp = np.linalg.norm(direction)
+        if hyp > 0:
+            direction = speed * direction / hyp
+        self.vel = direction
+        self.angle = np.arctan2(direction[1], direction[0])
 
     def enterClosestVehicle(self):#, vehicle):
 
@@ -143,41 +169,68 @@ class Player():
         if(self.vehicle):
             self.vehicle.draw()
         else:
-            gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
+            blitRotate(gameDisplay, self.image, self.pos, np.array([32.0,32.0]), self.angle)
+            #gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
 
 class Enemy(): # or creature rather
 
     def __init__(self, pos=np.array([20.0,20.0])):
         self.pos = pos
+        self.vel = np.array([0.,0.])
         self.size = 16
         self.angle = 0
         self.vehicle = None
+        self.health = 5
+        self.friction = 0.9
 
     def update(self):
+        self.move()
+        self.pos += self.vel
+        self.vel *= self.friction
+
+        # inbounds
+        self.pos=world.setInbounds(self.pos)
+
+    def move(self):
         pass
 
     def hurt(self, damage):
-        if damage > 10:
+        if damage > self.health:
             if self in world.things:
                 world.things.remove(self)
+                return True
+        else:
+            self.health -= damage
 
     def draw(self):
-        blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle-math.pi/2)
+        blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle)
         
-class Animus(Enemy): # because
+class Box(Enemy):
+    idleImage = loadImage("things/box.png")
+    def __init__(self, pos=np.array([20.0,20.0])):
+        super().__init__(pos)
+        self.image = Box.idleImage
+        self.size = 8
+        self.health = 3
+
+class Beetle(Enemy):
     images = [loadImage("things/beetle/beetle1.png"),loadImage("things/beetle/beetle2.png")]
     def __init__(self, pos=np.array([20.0,20.0])):
         super().__init__(pos)
-        self.image = Animus.images[0]
+        self.image = Beetle.images[0]
         self.size = 16
+        self.health = 9
 
-    def update(self):
+    def move(self):
+        """
         direction = world.player.pos - self.pos
-        direction = direction/np.linalg.norm(direction)
+        self.vel = direction/np.linalg.norm(direction)
         self.angle = np.arctan2(direction[1], direction[0])
-        self.pos += direction
-        self.image = Animus.images[random.randint(0,1)]
-
+        """
+        self.angle += random.random()*0.2 - 0.1
+        self.vel += np.array([math.cos(self.angle),math.sin(self.angle)]) * 0.1
+        self.vel *= 0.9
+        self.image = Beetle.images[random.randint(0,1)]
 
 class Vehicle():
     idleImage = loadImage("player.png")
@@ -186,6 +239,7 @@ class Vehicle():
         self.pos = pos
         self.angle = 0.0
         self.vel = np.array([0.0,0.0])
+        self.health = 20
 
         self.topspeed = 10.0
         self.acc = 0.3
@@ -238,16 +292,24 @@ class Vehicle():
 
     def collide(self, other):
         speed = np.linalg.norm(self.vel)
-        other.hurt(speed*self.size/16) #mass?
-        if(isinstance(other,Vehicle)):
-
-            other.vel+=self.vel
-            self.vel=-0.1*self.vel
+        #if(isinstance(other,Vehicle)):
+        other.vel+=self.vel
+        otherHealthBefore = other.health
+        attackDamage = speed*self.size/16 #mass?
+        killed = other.hurt(attackDamage)
+        if killed:
+            self.vel *= 1 - otherHealthBefore / attackDamage
         else:
-            self.vel *= 0
+            self.vel = -0.1 * self.vel
 
     def hurt(self, damage):
-        pass
+        if damage > self.health:
+            if self in world.vehicles:
+                world.vehicles.remove(self)
+                return True
+        else:
+            self.health -= damage
+        print(self.health)
 
     def move(self, pressed):
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
@@ -260,32 +322,34 @@ class Vehicle():
             self.accelerate()
 
     def turn(self,direction):
-        tot=self.totalSpeed()
-        self.angle+=direction*self.handling*tot/self.topspeed#min(self.turnTraction,
+        forwardVel = (np.dot(self.vel,self.direction()))*self.braking
+        #tot=self.totalSpeed()
+        self.angle+=direction*self.handling*forwardVel/self.topspeed#min(self.turnTraction,
 
     def totalSpeed(self):
         return np.linalg.norm(self.vel)
 
     def brake(self):
+        forwardVel = (np.dot(self.vel,self.direction()))*self.braking
+        sideVel = (np.dot(self.vel,self.direction(np.pi/2)))*1
         tot=self.totalSpeed()
-        if(tot!=0):
-            forwardVel = (np.dot(self.vel,self.direction()))*self.braking
-            if(forwardVel<self.brakestop):
-                forwardVel=0
-            else:
-                forwardVel-=self.brakestop/2
-            sideVel = (np.dot(self.vel,self.direction(np.pi/2)))*1
-            self.vel = self.direction()*forwardVel + self.direction(np.pi/2)*sideVel
-
-        #self.vel*=self.braking
-        #self.vel-=self.acc*self.direction()
+        if forwardVel > 0.1 and -0.1 < sideVel < 0.1: # sidevel så att man inte backar när man driftar med broms men märks typ inte ens.
+            if(tot!=0):
+                if(forwardVel<self.brakestop):
+                    forwardVel=0
+                else:
+                    forwardVel-=self.brakestop/2
+                self.vel = self.direction()*forwardVel + self.direction(np.pi/2)*sideVel
+        else:
+            self.vel*=self.braking
+            self.vel-=self.acc*self.direction()
     
     def accelerate(self):
         if(self.totalSpeed()<self.topspeed):
             self.vel+=self.acc*self.direction()
         
     def draw(self):
-        blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle-math.pi/2)
+        blitRotate(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle)
         #gameDisplay.blit(self.image,(self.x,self.y)) #-gridSize*self.size
 
         #Draw line
@@ -302,7 +366,7 @@ class RaceCar(Vehicle):
         self.image = RaceCar.idleImage
 
         self.topspeed = 10.0
-        self.acc = 0.3
+        self.acc = 0.2
         self.sideFriction = 0.95
         self.forwardFriction = 0.99
         self.braking = 0.9
