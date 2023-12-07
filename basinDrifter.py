@@ -5,8 +5,8 @@ import os
 import math
 import numpy as np
 
-screenWidth = 1200
-screenHeight = 700
+screenWidth = 1400
+screenHeight = 800
 gridSize = 64
 gameDisplay = pygame.display.set_mode((screenWidth, screenHeight))
 clock = pygame.time.Clock()
@@ -22,8 +22,8 @@ def loadImage(textureName, size=gridSize):
 
 def blitRotate(surf,image, pos, originPos, angle):
 
-    #ifx rad ddeg
-    angle = 180-angle*180/math.pi
+    #fix rad ddeg
+    angle = 180-angle*180/np.pi
 
     # calcaulate the axis aligned bounding box of the rotated image
     w, h       = image.get_size()
@@ -55,7 +55,7 @@ class Camera():
         angleSpeed = 0.05
         self.pos = self.pos*(1-followSpeed) + world.player.pos*followSpeed
         if(world.player.vehicle and False):
-            targetAngle = (world.player.angle + math.pi/2 - self.angle + math.pi) % (math.pi*2) + self.angle - math.pi # camera has player rotated 90 (so why isnt it -pi/2 ?!?)
+            targetAngle = (world.player.angle + np.pi/2 - self.angle + np.pi) % (np.pi*2) + self.angle - np.pi # camera has player rotated 90 (so why isnt it -pi/2 ?!?)
             self.angle = self.angle*(1-angleSpeed) + targetAngle*angleSpeed
 
     def blitImage(self, surf, image, pos, originPos, angle):
@@ -92,7 +92,7 @@ class World():
         #        self.surf.blit(self.groundImage,np.array([x*self.groundSize,y*self.groundSize]))
         
     def generateWorld(self):
-        center=[self.groundSize*self.worldsize//2]*2
+        center=np.array([self.groundSize*self.worldsize//2,self.groundSize*self.worldsize//2]).astype("float64")
         self.player = Player(center)
         self.centerChunk = self.getChunk(center)
         self.loadChunks()
@@ -258,14 +258,14 @@ class Player(Entity):
                 self.health -= speed
                 self.vel *= 0.99
                 self.image = Player.sidleImage
-                self.angle = random.random()*math.pi*2
+                self.angle = random.random()*np.pi*2
             else:
                 self.image = Player.idleImage
                 self.oldOrthogonalMove(pressed)
             self.pos += self.vel
         else:
             self.vehicle.move(pressed)
-            self.pos = self.vehicle.pos
+            self.pos = self.vehicle.pos*1 # dont remove *1! acts as copying array!!!
             self.vel = self.vehicle.vel/2
             self.angle = self.vehicle.angle
 
@@ -292,9 +292,9 @@ class Player(Entity):
         if(pressed[pygame.K_a] or pressed[pygame.K_LEFT]):
             self.angle -= 0.1
         if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
-            self.vel = np.array([math.cos(self.angle), math.sin(self.angle)]) * self.speed
+            self.vel = np.array([np.cos(self.angle), np.sin(self.angle)]) * self.speed
         elif(pressed[pygame.K_s] or pressed[pygame.K_DOWN]):
-            self.vel = np.array([math.cos(self.angle), math.sin(self.angle)]) * self.speed * -0.5
+            self.vel = np.array([np.cos(self.angle), np.sin(self.angle)]) * self.speed * -0.5
         else:
             self.vel = 0
 
@@ -351,6 +351,8 @@ class Enemy(Entity): # or creature rather
         super().__init__(pos,origin)
         self.vehicle = None
         self.friction = 0.9
+        self.state = 0
+        self.stateTimer = 0
 
     def update(self):
         self.move()
@@ -363,19 +365,25 @@ class Enemy(Entity): # or creature rather
     def move(self):
         pass
         
-class Box(Enemy):
+class Box(Entity):
     idleImage = loadImage("things/box.png")
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Box.idleImage
         self.size = 8
         self.health = 3
+        self.friction = 0.9
+
+    def update(self):
+        super().update()
+        self.vel *= self.friction
 
 class Beetle(Enemy):
-    images = [loadImage("things/beetle/beetle1.png"),loadImage("things/beetle/beetle2.png")]
+    idleImages = [loadImage("things/beetle/beetle1.png"),loadImage("things/beetle/beetle2.png")]
+    biteImages = [loadImage("things/beetle/bite1.png"),loadImage("things/beetle/bite2.png")]
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
-        self.image = Beetle.images[0]
+        self.image = Beetle.idleImages[0]
         self.size = 16
         self.health = 9
 
@@ -385,18 +393,62 @@ class Beetle(Enemy):
         self.vel = direction/np.linalg.norm(direction)
         self.angle = np.arctan2(direction[1], direction[0])
         """
-        self.angle += random.random()*0.2 - 0.1
-        self.vel += np.array([math.cos(self.angle),math.sin(self.angle)]) * 0.1
-        self.vel *= 0.9
-        self.image = Beetle.images[random.randint(0,1)]
+        if self.state == 0:
+
+            self.angle += random.random()*0.2 - 0.1
+            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * 0.1
+            self.vel *= 0.9
+            self.image = Beetle.idleImages[random.randint(0,1)]
+
+            if random.random()<0.01:
+                self.target = random.choice(world.entities)
+                if not self.target == self:
+                    dPos = self.target.pos - self.pos
+                    hyp = np.linalg.norm(dPos)
+                    if hyp<300:
+                        self.state = 1 # attack
+                        self.stateTimer = 0
+
+        elif self.state == 1:
+            if not self.target in world.entities:
+                self.state = 0
+                self.target = None
+            else:
+                dPos = self.target.pos - self.pos
+                hyp = np.linalg.norm(dPos)
+                if hyp < 30:
+                    self.state = 2
+                else:
+                    if hyp>0:
+                        self.vel += dPos/hyp * 0.2
+                    self.vel *= 0.9
+                    self.angle = np.arctan2(self.vel[1],self.vel[0])
+                    self.image = Beetle.idleImages[random.randint(0,1)]
+                    if hyp>300:
+                        self.state = 0
+
+        elif self.state == 2:
+            self.stateTimer += 1
+            if not self.target in world.entities:
+                self.state = 0
+                self.target = None
+
+            if self.stateTimer < 20:
+                self.image = self.biteImages[0]
+            elif self.stateTimer == 20:
+                self.target.hurt(4)
+            elif self.stateTimer < 60:
+                self.image = self.biteImages[1]
+            else:
+                self.state = 0
 
 class Vehicle(Entity):
     idleImage = loadImage("player.png")
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.health = 20
-        self.topspeed = 10.0
-        self.acc = 0.3
+        self.topspeed = 5.0
+        self.acc = 0.1
         self.sideFriction = 0.95
         self.forwardFriction = 0.99
         self.braking = 0.9
@@ -494,24 +546,24 @@ class RaceCar(Vehicle):
         super().__init__(pos,origin)
         self.image = RaceCar.idleImage
 
-        self.topspeed = 10.0
-        self.acc = 0.2
+        self.topspeed = 6.0
+        self.acc = 0.1
         self.sideFriction = 0.95
-        self.forwardFriction = 0.99
-        self.braking = 0.9
-        self.handling = 0.1
+        self.forwardFriction = 0.98
+        self.braking = 0.95
+        self.handling = 0.05
 class SlowCar(Vehicle):
     idleImage = loadImage("vehicles/car2.png")
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = SlowCar.idleImage
 
-        self.topspeed = 5.0
-        self.acc = 0.15
-        self.sideFriction = 0.95
-        self.forwardFriction = 0.98
+        self.topspeed = 3.5
+        self.acc = 0.05
+        self.sideFriction = 0.9
+        self.forwardFriction = 0.99
         self.braking = 0.95
-        self.handling = 0.05
+        self.handling = 0.03
 
 def main():
     running = True
