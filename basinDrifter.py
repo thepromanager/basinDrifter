@@ -5,7 +5,7 @@ import os
 import math
 import numpy as np
 
-screenWidth = 1300
+screenWidth = 1200
 screenHeight = 700
 gridSize = 64
 gameDisplay = pygame.display.set_mode((screenWidth, screenHeight))
@@ -62,7 +62,7 @@ class Camera():
         #cameraAngle = self.angle
         #R = np.array([[np.cos(-cameraAngle), -np.sin(-cameraAngle)],
         #              [np.sin(-cameraAngle),  np.cos(-cameraAngle)]])
-        #print(R @ (pos - world.player.pos))
+
         blittingPos = np.array([screenWidth//2, screenHeight//2+50]) + (pos - self.pos) # rotate position relative to player
         #blittingAngle = angle - cameraAngle
         #blitRotate(surf,image, blittingPos, originPos, blittingAngle)
@@ -85,6 +85,7 @@ class World():
         self.size = 1300.0
         self.centerChunk = None
         self.loadedChunks = []
+        self.toBeKilled = []
         #self.surf = pygame.Surface((self.groundSize*4,self.groundSize*4)).convert_alpha()
         #for x in [0,1,2,3]:
         #    for y in [0,1,2,3]:
@@ -96,26 +97,33 @@ class World():
         self.centerChunk = self.getChunk(center)
         self.loadChunks()
     def loadChunks(self):
-        print("before load",len(self.entities))
         x=self.centerChunk.gridpos[0]
         y=self.centerChunk.gridpos[1]
         newChunks=[]
         for dx in [-1,0,1]:
-            for dy in [-1,0,1]:
+            for dy in [-2,-1,0,1,2]: #dx and dy flipped :/
                 if(0 <= x+dx and x+dx<self.worldsize and 0 <= y+dy and y+dy<self.worldsize):
                     newChunks.append(self.chunks[x+dx][y+dy])
-        for oldChunk in self.loadedChunks:
-            if not oldChunk in newChunks:
-                oldChunk.unload()
+        for entity in self.entities:
+            inbounds=False
+            for newChunk in newChunks:
+                if(newChunk.inbounds(entity.pos)):
+                    inbounds=True
+            if(not inbounds):
+                entity.despawn()
+        for entity in self.toBeKilled:
+            self.entities.remove(entity)
+        self.toBeKilled=[] 
+        
         for newChunk in newChunks:
             if not newChunk in self.loadedChunks:
                 newChunk.load()
         self.loadedChunks=newChunks
-        print("after load",len(self.entities))
 
         #self.entities.append(self.player) draw last
     def getChunk(self,pos):
         x=int(pos[0]//self.groundSize) #necessary beacuse of numpy?
+        #print(pos,x)
         y=int(pos[1]//self.groundSize)
         if(0<=x and x<self.worldsize and 0<=y and y<self.worldsize):
             return self.chunks[x][y] 
@@ -125,6 +133,7 @@ class World():
         self.player.update()
         for entity in self.entities:
             entity.update()
+
         self.camera.update()
 
     def draw(self):
@@ -159,11 +168,12 @@ class Chunk():
         self.visited=False
         self.gridpos = gridpos
         self.pos = World.groundSize*self.gridpos.astype("float64")
-        self.image = Chunk.groundImage 
+        self.image = self.groundImage
+        self.toBeKilled = [] 
     def generateTiles(self):
         random.seed(self.seed)
         self.tiles=[[0 for i in range(World.chunksize)] for j in range(World.chunksize)] #easy spatial lookup but slow iteration?
-        for i in range(random.randint(0,4)):
+        for i in range(random.randint(2,5)):
             self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 1 
         for i in range(random.randint(0,2)):
             self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 2
@@ -184,7 +194,7 @@ class Chunk():
         for x in range(World.chunksize): #scipy.sparse find? onödig optimisering
             for y in range(World.chunksize):
                 tile=self.tiles[x][y]
-                pos=self.getTilePos(x,y)
+                pos=self.getTilePos(x,y)+np.array([1,1])
                 origin=(self,(x,y),tile) #<- tile index,
                 if(tile==1): #Box
                     world.entities.append(Box(pos,origin))
@@ -200,13 +210,9 @@ class Chunk():
         if(not self.visited):
             self.generateTiles()
         self.generateEntities()
-    def unload(self):
-        for entity in world.entities:
-            if(self.inbounds(entity.pos)):
-                entity.despawn()
 
     def draw(self):
-        world.camera.blitImage(gameDisplay, self.image, self.pos+np.array([World.groundSize,World.groundSize]), (World.groundSize*2,World.groundSize*2), 0)  
+        world.camera.blitImage(gameDisplay, self.image, self.pos+np.array([World.groundSize,World.groundSize]), (World.groundSize,World.groundSize), 0)  
 
 
 class Entity():
@@ -230,9 +236,11 @@ class Entity():
         else:
             self.health -= damage
     def despawn(self):
-        world.entities.remove(self)
         if(self.origin[0]):
+            world.toBeKilled.append(self)
             self.origin[0].tiles[self.origin[1][0]][self.origin[1][1]]=self.origin[2]
+        else:
+            print("couldnt despawn: no origin")
 class Player(Entity):
     sidleImage = loadImage("player.png")
     idleImage = loadImage("player3.png")
@@ -251,7 +259,6 @@ class Player(Entity):
                 self.vel *= 0.99
                 self.image = Player.sidleImage
                 self.angle = random.random()*math.pi*2
-                #print(self.health)
             else:
                 self.image = Player.idleImage
                 self.oldOrthogonalMove(pressed)
@@ -305,23 +312,21 @@ class Player(Entity):
         hyp = np.linalg.norm(direction)
         if hyp > 0:
             direction = speed * direction / hyp
-            cameraAngle = world.camera.angle
-            R = np.array([[np.cos(cameraAngle), -np.sin(cameraAngle)],
-                        [np.sin(cameraAngle),  np.cos(cameraAngle)]])
-            direction = R@direction
+            #cameraAngle = world.camera.angle
+            #R = np.array([[np.cos(cameraAngle), -np.sin(cameraAngle)],
+            #            [np.sin(cameraAngle),  np.cos(cameraAngle)]])
+            #direction = R@direction
             self.angle = np.arctan2(direction[1], direction[0])
 
         self.vel = direction
 
     def enterClosestVehicle(self):#, vehicle):
-
         # find closest vehicle
         bestDist = 50
         bestVehicle = None
         for entity in world.entities:
             if(isinstance(entity, Vehicle)):
                 dist = np.linalg.norm(entity.pos - self.pos)
-                #print(dist, bestDist)
                 if dist < bestDist:
                     bestDist = dist
                     bestVehicle = entity
@@ -334,14 +339,11 @@ class Player(Entity):
         self.vehicle = None
        
     def draw(self):
-        if(self.vehicle):
-            self.vehicle.draw()
-        else:
+        if(not self.vehicle):
             world.camera.blitImage(gameDisplay, self.image, self.pos, np.array([32.0,32.0]), self.angle)
             #gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
     
     def hurt(self,damage):
-
         return False
 class Enemy(Entity): # or creature rather
 
