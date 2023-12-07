@@ -54,74 +54,193 @@ class Camera():
         followSpeed = 0.5
         angleSpeed = 0.05
         self.pos = self.pos*(1-followSpeed) + world.player.pos*followSpeed
-        targetAngle = (world.player.angle + math.pi/2 - self.angle + math.pi) % (math.pi*2) + self.angle - math.pi # camera has player rotated 90 (so why isnt it -pi/2 ?!?)
-        self.angle = self.angle*(1-angleSpeed) + targetAngle*angleSpeed
+        if(world.player.vehicle and False):
+            targetAngle = (world.player.angle + math.pi/2 - self.angle + math.pi) % (math.pi*2) + self.angle - math.pi # camera has player rotated 90 (so why isnt it -pi/2 ?!?)
+            self.angle = self.angle*(1-angleSpeed) + targetAngle*angleSpeed
 
     def blitImage(self, surf, image, pos, originPos, angle):
-        cameraAngle = self.angle
-        R = np.array([[np.cos(-cameraAngle), -np.sin(-cameraAngle)],
-                      [np.sin(-cameraAngle),  np.cos(-cameraAngle)]])
+        #cameraAngle = self.angle
+        #R = np.array([[np.cos(-cameraAngle), -np.sin(-cameraAngle)],
+        #              [np.sin(-cameraAngle),  np.cos(-cameraAngle)]])
         #print(R @ (pos - world.player.pos))
-        blittingPos = np.array([screenWidth//2, screenHeight//2+50]) + R@(pos - self.pos) # rotate position relative to player
-        blittingAngle = angle - cameraAngle
-        blitRotate(surf,image, blittingPos, originPos, blittingAngle)
+        blittingPos = np.array([screenWidth//2, screenHeight//2+50]) + (pos - self.pos) # rotate position relative to player
+        #blittingAngle = angle - cameraAngle
+        #blitRotate(surf,image, blittingPos, originPos, blittingAngle)
+        if(angle==0):
+            surf.blit(image,(blittingPos - originPos))
+        else:
+            blitRotate(surf,image, blittingPos, originPos, angle)
 
 class World():
+    #groundSize = 448
+    worldsize = 15 #chunks x chunks
+    chunksize = 14 #tiles x tiles #14*32 = 448 och 448 är stort nog för att man inte ska se world border (laggar om den är större?)
+    tilesize = 32 #pixels x pixels
+    groundSize = chunksize*tilesize #448
     def __init__(self):
         self.player=None
-        self.things = []
-        self.vehicles = []
+        self.chunks = [[Chunk(random.randint(1,1000000),np.array([i,j])) for i in range(self.worldsize)] for j in range(self.worldsize)]
+        self.entities = []
         self.camera = Camera()
-    
-    def generateWorld(self): 
-        self.player = Player()
-        self.vehicles.append(RaceCar(np.array([150.0, 200.0])))
-        self.vehicles.append(SlowCar(np.array([200.0, 100.0])))
-        for i in range(5):
-            self.things.append(Beetle(np.array([2000.0*random.random(), 2000.0*random.random()])))
-        for i in range(20):
-            self.things.append(Box(np.array([2000.0*random.random(), 2000.0*random.random()])))
+        self.size = 1300.0
+        self.centerChunk = None
+        self.loadedChunks = []
+        #self.surf = pygame.Surface((self.groundSize*4,self.groundSize*4)).convert_alpha()
+        #for x in [0,1,2,3]:
+        #    for y in [0,1,2,3]:
+        #        self.surf.blit(self.groundImage,np.array([x*self.groundSize,y*self.groundSize]))
+        
+    def generateWorld(self):
+        center=[self.groundSize*self.worldsize//2]*2
+        self.player = Player(center)
+        self.centerChunk = self.getChunk(center)
+        self.loadChunks()
+    def loadChunks(self):
+        print("before load",len(self.entities))
+        x=self.centerChunk.gridpos[0]
+        y=self.centerChunk.gridpos[1]
+        newChunks=[]
+        for dx in [-1,0,1]:
+            for dy in [-1,0,1]:
+                if(0 <= x+dx and x+dx<self.worldsize and 0 <= y+dy and y+dy<self.worldsize):
+                    newChunks.append(self.chunks[x+dx][y+dy])
+        for oldChunk in self.loadedChunks:
+            if not oldChunk in newChunks:
+                oldChunk.unload()
+        for newChunk in newChunks:
+            if not newChunk in self.loadedChunks:
+                newChunk.load()
+        self.loadedChunks=newChunks
+        print("after load",len(self.entities))
 
+        #self.entities.append(self.player) draw last
+    def getChunk(self,pos):
+        x=int(pos[0]//self.groundSize) #necessary beacuse of numpy?
+        y=int(pos[1]//self.groundSize)
+        if(0<=x and x<self.worldsize and 0<=y and y<self.worldsize):
+            return self.chunks[x][y] 
+
+        
     def update(self):
-        for vehicle in self.vehicles:
-            vehicle.update()
-        for thing in self.things:
-            thing.update()
         self.player.update()
+        for entity in self.entities:
+            entity.update()
         self.camera.update()
 
     def draw(self):
-        for vehicle in self.vehicles:
-            vehicle.draw()
-        for thing in self.things:
-            thing.draw()
+        
+        
+         #       self.groundSize*((self.player.pos)//self.groundSize)
+        #world.camera.blitImage(gameDisplay, self.surf, self.groundSize*((self.player.pos+self.groundSize//2)//self.groundSize), (self.groundSize*2, self.groundSize*2), 0)
+        for chunk in world.loadedChunks:
+            chunk.draw()
+        for entity in self.entities:
+            entity.draw()
         self.player.draw()
 
     def setInbounds(self,pos):
         x=pos[0]
         y=pos[1]
-        if(x>self.player.pos[0]+1000): # the world is a 1000x1000 torus around the player
-            x-=2000
-        if(x<self.player.pos[0]-1000):
-            x+=2000
-        if(y>self.player.pos[1]+1000):
-            y-=2000
-        if(y<self.player.pos[1]-1000):
-            y+=2000
+        if(x>self.player.pos[0]+self.size/2): # the world is a 1000x1000 torus around the player
+            x-=self.size
+        if(x<self.player.pos[0]-self.size/2):
+            x+=self.size
+        if(y>self.player.pos[1]+self.size/2):
+            y-=self.size
+        if(y<self.player.pos[1]-self.size/2):
+            y+=self.size
         return np.array([x,y])
 
-class Player():
-    sidleImage = loadImage("player.png")
-    idleImage = loadImage("player3.png")
-    def __init__(self, pos=np.array([20.0,20.0])):
+class Chunk():
+    groundImage=loadImage("tiles/ground.png",size=World.groundSize)
+    def __init__(self, seed,gridpos):
+        self.seed=seed
+        self.tiles=None
+        self.visited=False
+        self.gridpos = gridpos
+        self.pos = World.groundSize*self.gridpos.astype("float64")
+        self.image = Chunk.groundImage 
+    def generateTiles(self):
+        random.seed(self.seed)
+        self.tiles=[[0 for i in range(World.chunksize)] for j in range(World.chunksize)] #easy spatial lookup but slow iteration?
+        for i in range(random.randint(0,4)):
+            self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 1 
+        for i in range(random.randint(0,2)):
+            self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 2
+        for i in range(random.randint(0,random.randint(0,1))):
+            self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 3
+        for i in range(random.randint(0,random.randint(0,1))):
+            self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 4
+        self.visited=True
+    def inbounds(self,pos):
+        if(pos[0]>=self.pos[0] and pos[1]>=self.pos[1] and pos[0]<self.pos[0]+world.groundSize and pos[1]<self.pos[1]+world.groundSize):
+            return True
+        else:
+            return False
+
+    def getTilePos(self,x,y):
+        return self.pos+np.array([x*World.tilesize,y*World.tilesize])
+    def generateEntities(self):
+        for x in range(World.chunksize): #scipy.sparse find? onödig optimisering
+            for y in range(World.chunksize):
+                tile=self.tiles[x][y]
+                pos=self.getTilePos(x,y)
+                origin=(self,(x,y),tile) #<- tile index,
+                if(tile==1): #Box
+                    world.entities.append(Box(pos,origin))
+                elif(tile==2): #Beetle
+                    world.entities.append(Beetle(pos,origin))
+                elif(tile==3): #SlowCar
+                    world.entities.append(SlowCar(pos,origin))
+                elif(tile==4): #RaceCar
+                    world.entities.append(RaceCar(pos,origin))
+                if(tile<50): #tile numbers under 50 are entities, over 50 are other types of tiles
+                    self.tiles[x][y]=0
+    def load(self):
+        if(not self.visited):
+            self.generateTiles()
+        self.generateEntities()
+    def unload(self):
+        for entity in world.entities:
+            if(self.inbounds(entity.pos)):
+                entity.despawn()
+
+    def draw(self):
+        world.camera.blitImage(gameDisplay, self.image, self.pos+np.array([World.groundSize,World.groundSize]), (World.groundSize*2,World.groundSize*2), 0)  
+
+
+class Entity():
+    def __init__(self, pos,origin):
+        self.origin=origin
         self.pos = pos
         self.angle = 0.
         self.vel = np.array([0.0,0.0])
-        self.size = 16
+        self.size = 16 
+        self.image = None
+        self.health = 10
+    def update(self):
+        self.pos += self.vel
+    def draw(self): 
+        world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize//2,gridSize//2), self.angle)
+    def hurt(self, damage):
+        if damage > self.health:
+            if self in world.entities:
+                world.entities.remove(self)
+                return True
+        else:
+            self.health -= damage
+    def despawn(self):
+        world.entities.remove(self)
+        if(self.origin[0]):
+            self.origin[0].tiles[self.origin[1][0]][self.origin[1][1]]=self.origin[2]
+class Player(Entity):
+    sidleImage = loadImage("player.png")
+    idleImage = loadImage("player3.png")
+    def __init__(self, pos):
+        super().__init__(pos,(None,(0,0),0))
         self.speed = gridSize//32
         self.image = Player.idleImage
         self.vehicle = None
-        self.health = 10
 
     def update(self):
         pressed = pygame.key.get_pressed()
@@ -132,9 +251,10 @@ class Player():
                 self.vel *= 0.99
                 self.image = Player.sidleImage
                 self.angle = random.random()*math.pi*2
+                #print(self.health)
             else:
                 self.image = Player.idleImage
-                self.move(pressed)
+                self.oldOrthogonalMove(pressed)
             self.pos += self.vel
         else:
             self.vehicle.move(pressed)
@@ -151,7 +271,11 @@ class Player():
                 self.enterClosestVehicle()
             else:
                 self.exitVehicle()
-
+        playerChunk = world.getChunk(self.pos)
+        if(playerChunk):
+            if(playerChunk != world.centerChunk):
+                world.centerChunk = playerChunk
+                world.loadChunks()
         # inbounds unnecessary since the world warps to greet the player
         #self.pos=world.setInbounds(self.pos)
 
@@ -167,7 +291,7 @@ class Player():
         else:
             self.vel = 0
 
-    def oldOrhogonalMove(self, pressed):
+    def oldOrthogonalMove(self, pressed):
         speed = self.speed
         direction = np.array([0.0,0.0])
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
@@ -181,7 +305,12 @@ class Player():
         hyp = np.linalg.norm(direction)
         if hyp > 0:
             direction = speed * direction / hyp
+            cameraAngle = world.camera.angle
+            R = np.array([[np.cos(cameraAngle), -np.sin(cameraAngle)],
+                        [np.sin(cameraAngle),  np.cos(cameraAngle)]])
+            direction = R@direction
             self.angle = np.arctan2(direction[1], direction[0])
+
         self.vel = direction
 
     def enterClosestVehicle(self):#, vehicle):
@@ -189,12 +318,13 @@ class Player():
         # find closest vehicle
         bestDist = 50
         bestVehicle = None
-        for vehicle in world.vehicles:
-            dist = np.linalg.norm(vehicle.pos - self.pos)
-            #print(dist, bestDist)
-            if dist < bestDist:
-                bestDist = dist
-                bestVehicle = vehicle
+        for entity in world.entities:
+            if(isinstance(entity, Vehicle)):
+                dist = np.linalg.norm(entity.pos - self.pos)
+                #print(dist, bestDist)
+                if dist < bestDist:
+                    bestDist = dist
+                    bestVehicle = entity
 
         # enter
         if bestVehicle:
@@ -209,16 +339,15 @@ class Player():
         else:
             world.camera.blitImage(gameDisplay, self.image, self.pos, np.array([32.0,32.0]), self.angle)
             #gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
+    
+    def hurt(self,damage):
 
-class Enemy(): # or creature rather
+        return False
+class Enemy(Entity): # or creature rather
 
-    def __init__(self, pos=np.array([20.0,20.0])):
-        self.pos = pos
-        self.vel = np.array([0.,0.])
-        self.size = 16
-        self.angle = 0
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
         self.vehicle = None
-        self.health = 5
         self.friction = 0.9
 
     def update(self):
@@ -227,34 +356,23 @@ class Enemy(): # or creature rather
         self.vel *= self.friction
 
         # inbounds
-        self.pos=world.setInbounds(self.pos)
+        #self.pos=world.setInbounds(self.pos)
 
     def move(self):
         pass
-
-    def hurt(self, damage):
-        if damage > self.health:
-            if self in world.things:
-                world.things.remove(self)
-                return True
-        else:
-            self.health -= damage
-
-    def draw(self):
-        world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle)
         
 class Box(Enemy):
     idleImage = loadImage("things/box.png")
-    def __init__(self, pos=np.array([20.0,20.0])):
-        super().__init__(pos)
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
         self.image = Box.idleImage
         self.size = 8
         self.health = 3
 
 class Beetle(Enemy):
     images = [loadImage("things/beetle/beetle1.png"),loadImage("things/beetle/beetle2.png")]
-    def __init__(self, pos=np.array([20.0,20.0])):
-        super().__init__(pos)
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
         self.image = Beetle.images[0]
         self.size = 16
         self.health = 9
@@ -270,15 +388,11 @@ class Beetle(Enemy):
         self.vel *= 0.9
         self.image = Beetle.images[random.randint(0,1)]
 
-class Vehicle():
+class Vehicle(Entity):
     idleImage = loadImage("player.png")
-    def __init__(self, pos=np.array([20.0,20.0])):
-        self.size = 16
-        self.pos = pos
-        self.angle = 0.0
-        self.vel = np.array([0.0,0.0])
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
         self.health = 20
-
         self.topspeed = 10.0
         self.acc = 0.3
         self.sideFriction = 0.95
@@ -286,8 +400,6 @@ class Vehicle():
         self.braking = 0.9
         self.brakestop = 0.1
         self.handling = 0.1
-
-        self.pastPos = []
         #self.traction = 0.1
         #self.turnTraction = 10.0
         #self.drift = 
@@ -297,10 +409,6 @@ class Vehicle():
 
     def update(self):
 
-        # save position history for line
-        self.pastPos.append((np.ceil(self.pos)).astype(int))
-        if(len(self.pastPos)>240):
-            self.pastPos.pop(0)
 
         # move
         self.pos+=self.vel
@@ -320,13 +428,13 @@ class Vehicle():
             self.vel=traction+remainder
             """
 
-        for i in world.things + world.vehicles: #collidibles ?
+        for i in world.entities: #collidibles ?
             if i != self:
                 if np.linalg.norm(self.pos - i.pos)<self.size + i.size:
                     self.collide(i)
 
         # inbounds
-        self.pos=world.setInbounds(self.pos)
+        #self.pos=world.setInbounds(self.pos)
 
     def collide(self, other):
         speed = np.linalg.norm(self.vel)
@@ -340,14 +448,6 @@ class Vehicle():
         else:
             self.vel = -0.1 * self.vel
 
-    def hurt(self, damage):
-        if damage > self.health:
-            if self in world.vehicles:
-                world.vehicles.remove(self)
-                return True
-        else:
-            self.health -= damage
-        print(self.health)
 
     def move(self, pressed):
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
@@ -385,22 +485,11 @@ class Vehicle():
     def accelerate(self):
         if(self.totalSpeed()<self.topspeed):
             self.vel+=self.acc*self.direction()
-        
-    def draw(self):
-        world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize//2, gridSize//2), self.angle)
-        #gameDisplay.blit(self.image,(self.x,self.y)) #-gridSize*self.size
-
-        #Draw line
-        for i in range(len(self.pastPos)):
-            pos=self.pastPos[i]
-            if(i%2==0):
-
-                gameDisplay.set_at(pos, (255,255,255))
 
 class RaceCar(Vehicle):
     idleImage = loadImage("vehicles/car.png")
-    def __init__(self, pos=np.array([20.0,20.0])):
-        super().__init__(pos)
+    def __init__(self,pos,origin):
+        super().__init__(pos,origin)
         self.image = RaceCar.idleImage
 
         self.topspeed = 10.0
@@ -411,8 +500,8 @@ class RaceCar(Vehicle):
         self.handling = 0.1
 class SlowCar(Vehicle):
     idleImage = loadImage("vehicles/car2.png")
-    def __init__(self, pos=np.array([20.0,20.0])):
-        super().__init__(pos)
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
         self.image = SlowCar.idleImage
 
         self.topspeed = 5.0
