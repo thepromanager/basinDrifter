@@ -5,6 +5,14 @@ import os
 import math
 import numpy as np
 
+# tiles
+# health bar
+# combat
+# items
+# inventory
+# lighting?
+# enemies
+
 screenWidth = 1400
 screenHeight = 800
 gridSize = 64
@@ -12,7 +20,7 @@ gameDisplay = pygame.display.set_mode((screenWidth, screenHeight))
 clock = pygame.time.Clock()
 
 def loadImage(textureName, size=gridSize):
-    name = os.path.join("textures", textureName)
+    name = os.path.join("assets/textures", textureName)
     image = pygame.image.load(name).convert_alpha()
     image = pygame.transform.scale(image, (size, size))
 
@@ -63,7 +71,7 @@ class Camera():
         #R = np.array([[np.cos(-cameraAngle), -np.sin(-cameraAngle)],
         #              [np.sin(-cameraAngle),  np.cos(-cameraAngle)]])
 
-        blittingPos = np.array([screenWidth//2, screenHeight//2+50]) + (pos - self.pos) # rotate position relative to player
+        blittingPos = np.array([screenWidth//2, screenHeight//2]) + (pos - self.pos) # rotate position relative to player
         #blittingAngle = angle - cameraAngle
         #blitRotate(surf,image, blittingPos, originPos, blittingAngle)
         if(angle==0):
@@ -169,18 +177,27 @@ class Chunk():
         self.gridpos = gridpos
         self.pos = World.groundSize*self.gridpos.astype("float64")
         self.image = self.groundImage
-        self.toBeKilled = [] 
+        #self.toBeKilled = []  # remove this? /b
     def generateTiles(self):
         random.seed(self.seed)
         self.tiles=[[0 for i in range(World.chunksize)] for j in range(World.chunksize)] #easy spatial lookup but slow iteration?
-        for i in range(random.randint(2,5)):
-            self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 1 
-        for i in range(random.randint(0,2)):
-            self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 2
-        for i in range(random.randint(0,random.randint(0,1))):
-            self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 3
-        for i in range(random.randint(0,random.randint(0,1))):
-            self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 4
+        if random.random()<0.5:
+            for i in range(random.randint(4,10)):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 5 # bush
+        elif random.random()<0.5:
+            for i in range(random.randint(2,5)):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 2 # beetle
+        elif random.random()<0.5:
+            for i in range(random.randint(2,5)):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 6 # worm
+        elif random.random()<0.5:
+            for i in range(random.randint(2,5)):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 1 # box
+        else:
+            for i in range(random.randint(0,random.randint(0,1))):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 3 # slow car
+            for i in range(random.randint(0,random.randint(0,1))):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 4 # race car
         self.visited=True
     def inbounds(self,pos):
         if(pos[0]>=self.pos[0] and pos[1]>=self.pos[1] and pos[0]<self.pos[0]+world.groundSize and pos[1]<self.pos[1]+world.groundSize):
@@ -204,7 +221,11 @@ class Chunk():
                     world.entities.append(SlowCar(pos,origin))
                 elif(tile==4): #RaceCar
                     world.entities.append(RaceCar(pos,origin))
-                if(tile<50): #tile numbers under 50 are entities, over 50 are other types of tiles
+                elif(tile==5): #Bush
+                    world.entities.append(Bush(pos,origin))
+                elif(tile==6): #Beetle
+                    world.entities.append(Worm(pos,origin))
+                if(tile<100): #tile numbers under 100 are entities, over 100 are other types of tiles
                     self.tiles[x][y]=0
     def load(self):
         if(not self.visited):
@@ -242,28 +263,69 @@ class Entity():
         else:
             print("couldnt despawn: no origin")
 class Player(Entity):
-    sidleImage = loadImage("player.png")
-    idleImage = loadImage("player3.png")
+    sidleImage = loadImage("player/player3.png")
+    idleImage = loadImage("player/player.png")
+    shoot1Image = loadImage("player/shooting.png")
+    shoot2Image = loadImage("player/shooting2.png")
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0))
         self.speed = gridSize//32
         self.image = Player.idleImage
         self.vehicle = None
+        self.state = "walking"
+        self.health = 20
+        self.gun = True
+        self.ammo = 10
 
     def update(self):
         pressed = pygame.key.get_pressed()
-        if(not self.vehicle):
+        if self.vehicle==None:
             speed = np.linalg.norm(self.vel)
             if speed>3:
+                self.state = "tumbling"
                 self.health -= speed
                 self.vel *= 0.99
                 self.image = Player.sidleImage
                 self.angle = random.random()*np.pi*2
             else:
-                self.image = Player.idleImage
-                self.oldOrthogonalMove(pressed)
+                if self.state == "walking":
+
+                    self.image = Player.idleImage
+                    self.move(pressed)
+
+                    #shooting logic
+                    if pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True and self.ammo>0:
+                        mouse_screen_pos = pygame.mouse.get_pos()
+                        relative_mouse_x = mouse_screen_pos[0] - screenWidth//2
+                        relative_mouse_y = mouse_screen_pos[1] - screenHeight//2
+                        self.angle = np.arctan2(relative_mouse_y, relative_mouse_x)
+                        self.image = Player.shoot2Image
+                        self.stateTimer = 0
+                        self.state = "shooting"
+                        self.ammo -= 1
+                        self.vel = np.array((0.,0.))
+                        for entity in world.entities:
+                            relative_entity_pos = entity.pos - self.pos
+                            # bullets are rays
+                            # use projection formula to find closest point on bullet ray (ie projected point)
+                            dot_product = max(0, relative_entity_pos[0]*relative_mouse_x + relative_entity_pos[1]*relative_mouse_y) #dont shoot backwards
+                            relative_projected_point = np.array((relative_mouse_x, relative_mouse_y)) * dot_product / (relative_mouse_x**2 + relative_mouse_y**2)
+                            projected_point = self.pos + relative_projected_point
+                            distance_to_bullet_2 = (projected_point[0]-entity.pos[0])**2 + (projected_point[1]-entity.pos[1])**2
+                            if distance_to_bullet_2 < entity.size**2:
+                                entity.hurt(6)
+                                print("yay")
+
+
+                elif self.state == "shooting":
+                    self.image = Player.shoot1Image
+                    self.stateTimer += 1
+                    if self.stateTimer > 20:
+                        self.state = "walking"
+
             self.pos += self.vel
         else:
+            self.state = "driving"
             self.vehicle.move(pressed)
             self.pos = self.vehicle.pos*1 # dont remove *1! acts as copying array!!!
             self.vel = self.vehicle.vel/2
@@ -278,27 +340,16 @@ class Player(Entity):
                 self.enterClosestVehicle()
             else:
                 self.exitVehicle()
+
+
         playerChunk = world.getChunk(self.pos)
         if(playerChunk):
             if(playerChunk != world.centerChunk):
                 world.centerChunk = playerChunk
                 world.loadChunks()
-        # inbounds unnecessary since the world warps to greet the player
-        #self.pos=world.setInbounds(self.pos)
+        # no torus warping?
 
     def move(self, pressed):
-        if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
-            self.angle += 0.1
-        if(pressed[pygame.K_a] or pressed[pygame.K_LEFT]):
-            self.angle -= 0.1
-        if(pressed[pygame.K_w] or pressed[pygame.K_UP]):
-            self.vel = np.array([np.cos(self.angle), np.sin(self.angle)]) * self.speed
-        elif(pressed[pygame.K_s] or pressed[pygame.K_DOWN]):
-            self.vel = np.array([np.cos(self.angle), np.sin(self.angle)]) * self.speed * -0.5
-        else:
-            self.vel = 0
-
-    def oldOrthogonalMove(self, pressed):
         speed = self.speed
         direction = np.array([0.0,0.0])
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
@@ -342,9 +393,14 @@ class Player(Entity):
         if(not self.vehicle):
             world.camera.blitImage(gameDisplay, self.image, self.pos, np.array([32.0,32.0]), self.angle)
             #gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
+            bar_width = 500
+            bar_height = 10
+            health_color = (200,0,0)
+            empty_color = (20,0,0)
+            max_health = 20
+            pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height, bar_width, bar_height), 0)
+            pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/max_health, bar_height), 0)
     
-    def hurt(self,damage):
-        return False
 class Enemy(Entity): # or creature rather
 
     def __init__(self, pos,origin):
@@ -377,6 +433,18 @@ class Box(Entity):
     def update(self):
         super().update()
         self.vel *= self.friction
+class Bush(Entity):
+    idleImage = loadImage("things/bush.png")
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
+        self.image = Bush.idleImage
+        self.size = 8
+        self.health = 2
+        self.friction = 0.9
+
+    def update(self):
+        super().update()
+        self.vel *= self.friction
 
 class Beetle(Enemy):
     idleImages = [loadImage("things/beetle/beetle1.png"),loadImage("things/beetle/beetle2.png")]
@@ -400,8 +468,10 @@ class Beetle(Enemy):
             self.vel *= 0.9
             self.image = Beetle.idleImages[random.randint(0,1)]
 
-            if random.random()<0.01:
+            if random.random()<0.02:
                 self.target = random.choice(world.entities)
+                if random.random()<0.5:
+                    self.target = (world.player)
                 if not self.target == self:
                     dPos = self.target.pos - self.pos
                     hyp = np.linalg.norm(dPos)
@@ -410,14 +480,15 @@ class Beetle(Enemy):
                         self.stateTimer = 0
 
         elif self.state == 1:
-            if not self.target in world.entities:
+            if not self.target in world.entities+[world.player]:
                 self.state = 0
                 self.target = None
             else:
                 dPos = self.target.pos - self.pos
                 hyp = np.linalg.norm(dPos)
-                if hyp < 30:
+                if hyp < 40:
                     self.state = 2
+                    self.stateTimer = 0
                 else:
                     if hyp>0:
                         self.vel += dPos/hyp * 0.2
@@ -429,21 +500,82 @@ class Beetle(Enemy):
 
         elif self.state == 2:
             self.stateTimer += 1
-            if not self.target in world.entities:
-                self.state = 0
-                self.target = None
 
             if self.stateTimer < 20:
                 self.image = self.biteImages[0]
             elif self.stateTimer == 20:
-                self.target.hurt(4)
+                if self.target:
+                    self.target.hurt(4)
             elif self.stateTimer < 60:
                 self.image = self.biteImages[1]
             else:
+                self.state = 1
+class Worm(Enemy):
+    idleImages = [loadImage("things/worm/worm.png"),loadImage("things/worm/worm2.png")]
+    biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
+        self.image = Worm.idleImages[0]
+        self.size = 12
+        self.health = 5
+
+    def move(self):
+        """
+        direction = world.player.pos - self.pos
+        self.vel = direction/np.linalg.norm(direction)
+        self.angle = np.arctan2(direction[1], direction[0])
+        """
+        self.stateTimer += 1
+        if self.state == 0:
+
+            self.angle += random.random()*0.2 - 0.1
+            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * 0.1
+            self.vel *= 0.9
+            self.image = Worm.idleImages[self.stateTimer%32 < 16]
+
+            if random.random()<0.03:
+                self.target = random.choice(world.entities)
+                if not self.target == self:
+                    dPos = self.target.pos - self.pos
+                    hyp = np.linalg.norm(dPos)
+                    if hyp<400:
+                        self.state = 1 # attack
+                        self.stateTimer = 0
+
+        elif self.state == 1:
+            if not self.target in world.entities:
                 self.state = 0
+                self.target = None
+            else:
+                dPos = self.target.pos - self.pos
+                hyp = np.linalg.norm(dPos)
+                if hyp < 50:
+                    self.state = 2
+                    self.stateTimer = 0
+                else:
+                    if hyp>0:
+                        self.vel += dPos/hyp * 0.3
+                    self.vel *= 0.9
+                    self.angle = np.arctan2(self.vel[1],self.vel[0])
+                    self.image = Worm.idleImages[self.stateTimer%16 < 8]
+                    if hyp>500:
+                        self.state = 0
+
+        elif self.state == 2:
+
+            if self.stateTimer < 10:
+                self.image = self.biteImages[0]
+            elif self.stateTimer == 10:
+                if self.target:
+                    self.target.hurt(2)
+            elif self.stateTimer < 45:
+                self.image = self.biteImages[1]
+            else:
+                if random.random()<0.5:
+                    self.target = None
+                self.state = 1
 
 class Vehicle(Entity):
-    idleImage = loadImage("player.png")
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.health = 20
