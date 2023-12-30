@@ -269,7 +269,7 @@ class Player(Entity):
     shoot2Image = loadImage("player/shooting2.png")
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0))
-        self.speed = gridSize//32
+        self.speed = 2
         self.image = Player.idleImage
         self.vehicle = None
         self.state = "walking"
@@ -280,48 +280,45 @@ class Player(Entity):
     def update(self):
         pressed = pygame.key.get_pressed()
         if self.vehicle==None:
-            speed = np.linalg.norm(self.vel)
-            if speed>3:
-                self.state = "tumbling"
+            if self.state == "tumbling":
                 self.health -= speed
                 self.vel *= 0.99
                 self.image = Player.sidleImage
                 self.angle = random.random()*np.pi*2
-            else:
-                if self.state == "walking":
+            elif self.state == "walking":
 
-                    self.image = Player.idleImage
-                    self.move(pressed)
+                self.image = Player.idleImage
+                self.move(pressed)
 
-                    #shooting logic
-                    if pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True and self.ammo>0:
-                        mouse_screen_pos = pygame.mouse.get_pos()
-                        relative_mouse_x = mouse_screen_pos[0] - screenWidth//2
-                        relative_mouse_y = mouse_screen_pos[1] - screenHeight//2
-                        self.angle = np.arctan2(relative_mouse_y, relative_mouse_x)
-                        self.image = Player.shoot2Image
-                        self.stateTimer = 0
-                        self.state = "shooting"
-                        self.ammo -= 1
-                        self.vel = np.array((0.,0.))
-                        for entity in world.entities:
-                            relative_entity_pos = entity.pos - self.pos
-                            # bullets are rays
-                            # use projection formula to find closest point on bullet ray (ie projected point)
-                            dot_product = max(0, relative_entity_pos[0]*relative_mouse_x + relative_entity_pos[1]*relative_mouse_y) #dont shoot backwards
-                            relative_projected_point = np.array((relative_mouse_x, relative_mouse_y)) * dot_product / (relative_mouse_x**2 + relative_mouse_y**2)
-                            projected_point = self.pos + relative_projected_point
-                            distance_to_bullet_2 = (projected_point[0]-entity.pos[0])**2 + (projected_point[1]-entity.pos[1])**2
-                            if distance_to_bullet_2 < entity.size**2:
-                                entity.hurt(6)
-                                print("yay")
+                #shooting logic
+                if pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True and self.ammo>0:
+                    mouse_screen_pos = pygame.mouse.get_pos()
+                    relative_mouse_x = mouse_screen_pos[0] - screenWidth//2
+                    relative_mouse_y = mouse_screen_pos[1] - screenHeight//2
+                    self.angle = np.arctan2(relative_mouse_y, relative_mouse_x)
+                    self.image = Player.shoot2Image
+                    self.stateTimer = 0
+                    self.state = "shooting"
+                    self.ammo -= 1
+                    self.vel = np.array((0.,0.))
+                    for entity in world.entities:
+                        relative_entity_pos = entity.pos - self.pos
+                        # bullets are rays
+                        # use projection formula to find closest point on bullet ray (ie projected point)
+                        dot_product = max(0, relative_entity_pos[0]*relative_mouse_x + relative_entity_pos[1]*relative_mouse_y) #dont shoot backwards
+                        relative_projected_point = np.array((relative_mouse_x, relative_mouse_y)) * dot_product / (relative_mouse_x**2 + relative_mouse_y**2)
+                        projected_point = self.pos + relative_projected_point
+                        distance_to_bullet_2 = (projected_point[0]-entity.pos[0])**2 + (projected_point[1]-entity.pos[1])**2
+                        if distance_to_bullet_2 < entity.size**2:
+                            entity.hurt(6)
+                            print("yay")
 
 
-                elif self.state == "shooting":
-                    self.image = Player.shoot1Image
-                    self.stateTimer += 1
-                    if self.stateTimer > 20:
-                        self.state = "walking"
+            elif self.state == "shooting":
+                self.image = Player.shoot1Image
+                self.stateTimer += 1
+                if self.stateTimer > 20:
+                    self.state = "walking"
 
             self.pos += self.vel
         else:
@@ -375,6 +372,7 @@ class Player(Entity):
         # find closest vehicle
         bestDist = 50
         bestVehicle = None
+        self.state = "driving"
         for entity in world.entities:
             if(isinstance(entity, Vehicle)):
                 dist = np.linalg.norm(entity.pos - self.pos)
@@ -388,18 +386,28 @@ class Player(Entity):
 
     def exitVehicle(self):
         self.vehicle = None
+        speed = np.linalg.norm(self.vel)
+        if speed>3:
+            self.state = "tumbling"
+        else:
+            self.state = "walking"
        
     def draw(self):
         if(not self.vehicle):
             world.camera.blitImage(gameDisplay, self.image, self.pos, np.array([32.0,32.0]), self.angle)
             #gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
-            bar_width = 500
-            bar_height = 10
-            health_color = (200,0,0)
-            empty_color = (20,0,0)
-            max_health = 20
-            pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height, bar_width, bar_height), 0)
-            pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/max_health, bar_height), 0)
+            
+        else:
+            pass#pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height*3, bar_width, bar_height), 0)
+            #pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/max_health, bar_height), 0)
+
+        bar_width = 500
+        bar_height = 10
+        health_color = (200,0,0)
+        empty_color = (20,0,0)
+        max_health = 20
+        pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height, bar_width, bar_height), 0)
+        pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/max_health, bar_height), 0)
     
 class Enemy(Entity): # or creature rather
 
@@ -449,11 +457,12 @@ class Bush(Entity):
 class Beetle(Enemy):
     idleImages = [loadImage("things/beetle/beetle1.png"),loadImage("things/beetle/beetle2.png")]
     biteImages = [loadImage("things/beetle/bite1.png"),loadImage("things/beetle/bite2.png")]
+    deadImage = loadImage("things/beetle/dead.png")
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Beetle.idleImages[0]
         self.size = 16
-        self.health = 9
+        self.health = 12
 
     def move(self):
         """
@@ -461,6 +470,10 @@ class Beetle(Enemy):
         self.vel = direction/np.linalg.norm(direction)
         self.angle = np.arctan2(direction[1], direction[0])
         """
+        if self.health < 4:
+            self.state = "dead"
+            self.image = Beetle.deadImage
+
         if self.state == 0:
 
             self.angle += random.random()*0.2 - 0.1
