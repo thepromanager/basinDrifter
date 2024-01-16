@@ -10,8 +10,14 @@ import numpy as np
 # combat
 # items
 # inventory
+
 # lighting?
-# enemies
+#inside houses?
+
+#enemies with different behaviour, fågel, ko, 
+#bombs, melee, ammo, crates filled with goodies
+#biomes, chunks, rivers, roads, collide walls, structures, tiles
+ 
 
 screenWidth = 1400
 screenHeight = 800
@@ -250,10 +256,12 @@ class Entity():
     def draw(self): 
         world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize//2,gridSize//2), self.angle)
     def hurt(self, damage):
-        if damage > self.health:
+        if damage >= self.health:
+            self.health=0
             if self in world.entities:
                 world.entities.remove(self)
                 return True
+
         else:
             self.health -= damage
     def despawn(self):
@@ -276,6 +284,7 @@ class Player(Entity):
         self.health = 20
         self.gun = True
         self.ammo = 10
+        self.max_health = 20
 
     def update(self):
         pressed = pygame.key.get_pressed()
@@ -290,8 +299,18 @@ class Player(Entity):
                 self.image = Player.idleImage
                 self.move(pressed)
 
+                
+                if(pressed[pygame.K_e]):
+                    self.state="eating"
+                    self.stateTimer=0
+                elif(pressed[pygame.K_LSHIFT] and not self.shiftDown):
+                    self.shiftDown = True
+                    if self.vehicle == None:
+                        self.enterClosestVehicle()
+                    else:
+                        self.exitVehicle()
                 #shooting logic
-                if pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True and self.ammo>0:
+                elif pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True and self.ammo>0:
                     mouse_screen_pos = pygame.mouse.get_pos()
                     relative_mouse_x = mouse_screen_pos[0] - screenWidth//2
                     relative_mouse_y = mouse_screen_pos[1] - screenHeight//2
@@ -310,9 +329,16 @@ class Player(Entity):
                         projected_point = self.pos + relative_projected_point
                         distance_to_bullet_2 = (projected_point[0]-entity.pos[0])**2 + (projected_point[1]-entity.pos[1])**2
                         if distance_to_bullet_2 < entity.size**2:
-                            entity.hurt(6)
+                            entity.hurt(5)
                             print("yay")
 
+            elif self.state == "eating":
+                self.stateTimer+=1
+                self.vel *= 0.8
+                if(self.stateTimer>10):
+                    self.eatClosest()
+                if(not pressed[pygame.K_e]):
+                    self.state="walking"
 
             elif self.state == "shooting":
                 self.image = Player.shoot1Image
@@ -331,12 +357,6 @@ class Player(Entity):
 
         if(not pressed[pygame.K_LSHIFT]):
             self.shiftDown = False
-        if(pressed[pygame.K_LSHIFT] and not self.shiftDown):
-            self.shiftDown = True
-            if self.vehicle == None:
-                self.enterClosestVehicle()
-            else:
-                self.exitVehicle()
 
 
         playerChunk = world.getChunk(self.pos)
@@ -367,9 +387,23 @@ class Player(Entity):
             self.angle = np.arctan2(direction[1], direction[0])
 
         self.vel = direction
+    def eatClosest(self):
+        bestDist = 50
+        bestFood = None
+        for entity in world.entities:
+            if(isinstance(entity, Enemy)):
+                dist = np.linalg.norm(entity.pos - self.pos)
+                if dist < bestDist:
+                    bestDist = dist
+                    bestFood = entity
 
+        # enter
+        if bestFood:
+            eatingspeed=0.05
+            self.health=min(self.max_health,self.health+eatingspeed)
+            bestFood.hurt(eatingspeed)
     def enterClosestVehicle(self):#, vehicle):
-        # find closest vehicle
+        # find closest enemy to eat
         bestDist = 50
         bestVehicle = None
         self.state = "driving"
@@ -405,9 +439,8 @@ class Player(Entity):
         bar_height = 10
         health_color = (200,0,0)
         empty_color = (20,0,0)
-        max_health = 20
         pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height, bar_width, bar_height), 0)
-        pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/max_health, bar_height), 0)
+        pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/self.max_health, bar_height), 0)
     
 class Enemy(Entity): # or creature rather
 
