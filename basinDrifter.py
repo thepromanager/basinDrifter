@@ -16,8 +16,7 @@ import numpy as np
 
 #enemies with different behaviour, fågel, ko, 
 #bombs, melee, ammo, crates filled with goodies
-#biomes, chunks, rivers, roads, collide walls, structures, tiles
- 
+#biomes, chunks, rivers, roads, collide walls, structures, tiles 
 
 screenWidth = 1400
 screenHeight = 800
