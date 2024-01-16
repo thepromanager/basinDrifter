@@ -304,10 +304,7 @@ class Player(Entity):
                     self.stateTimer=0
                 elif(pressed[pygame.K_LSHIFT] and not self.shiftDown):
                     self.shiftDown = True
-                    if self.vehicle == None:
-                        self.enterClosestVehicle()
-                    else:
-                        self.exitVehicle()
+                    self.enterClosestVehicle()
                 #shooting logic
                 elif pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True and self.ammo>0:
                     mouse_screen_pos = pygame.mouse.get_pos()
@@ -329,6 +326,8 @@ class Player(Entity):
                         distance_to_bullet_2 = (projected_point[0]-entity.pos[0])**2 + (projected_point[1]-entity.pos[1])**2
                         if distance_to_bullet_2 < entity.size**2:
                             entity.hurt(5)
+                            distance_to_player = np.linalg.norm(relative_projected_point)
+                            entity.vel += relative_projected_point/distance_to_player * 1000 / (distance_to_player+10)
                             print("yay")
 
             elif self.state == "eating":
@@ -352,6 +351,10 @@ class Player(Entity):
             self.pos = self.vehicle.pos*1 # dont remove *1! acts as copying array!!!
             self.vel = self.vehicle.vel/2
             self.angle = self.vehicle.angle
+
+            if(pressed[pygame.K_LSHIFT] and not self.shiftDown):
+                self.shiftDown = True
+                self.exitVehicle()
 
 
         if(not pressed[pygame.K_LSHIFT]):
@@ -550,7 +553,10 @@ class Beetle(Enemy):
                 self.image = self.biteImages[0]
             elif self.stateTimer == 20:
                 if self.target:
-                    self.target.hurt(4)
+                    dPos = self.target.pos - self.pos
+                    hyp = np.linalg.norm(dPos)
+                    if hyp < 40:
+                        self.target.hurt(4)
             elif self.stateTimer < 60:
                 self.image = self.biteImages[1]
             else:
