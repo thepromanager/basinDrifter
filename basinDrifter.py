@@ -590,7 +590,7 @@ class Worm(Enemy):
             self.image = Worm.idleImages[self.stateTimer%32 < 16]
 
             if random.random()<0.03:
-                self.target = random.choice(world.entities)
+                self.target = random.choice(world.entities+[world.player])
                 if not self.target == self:
                     dPos = self.target.pos - self.pos
                     hyp = np.linalg.norm(dPos)
@@ -633,17 +633,19 @@ class Worm(Enemy):
 
 
 class Dragonfly(Enemy):
-    idleImages = [loadImage("things/dragonfly/dragonfly.png",size=gridSize),loadImage("things/dragonfly/dragonflyL.png",size=gridSize),loadImage("things/dragonfly/dragonflyLR.png",size=gridSize),loadImage("things/dragonfly/dragonflyR.png",size=gridSize)]
+    idleImages = [loadImage("things/dragonfly/dragonfly.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyL.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyLR.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyR.png",size=gridSize*2)]
     #biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Dragonfly.idleImages[0]
-        self.size = 24
-        self.health = 5
+        self.size = 32
+        self.health = 17
         self.grabbed = None
         self.nest = pos*1
         self.target = None
 
+    def draw(self): 
+        world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize,gridSize), self.angle)
     def move(self):
         """
         direction = world.player.pos - self.pos
@@ -655,6 +657,9 @@ class Dragonfly(Enemy):
 
             if random.random()<0.01:
                 self.target = random.choice(world.entities)
+                if(random.random()<0.05):
+                    self.target=world.player
+
                 if not self.target == self:
                     dPos=self.target.pos - self.pos
                     self.angle = np.arctan2(dPos[1],dPos[0])
@@ -673,7 +678,7 @@ class Dragonfly(Enemy):
                     self.stateTimer = 0
 
         elif self.state == 1:
-            if not self.target in world.entities:
+            if not self.target in world.entities+[world.player]:
                 self.state = 0
                 self.target = None
             else:
@@ -684,6 +689,7 @@ class Dragonfly(Enemy):
                     self.state = 2
                     self.stateTimer = 0
                     self.grabbed = self.target
+
                 else:
                     if hyp>0:
                         self.vel += dPos/hyp * 0.6
@@ -693,10 +699,11 @@ class Dragonfly(Enemy):
 
         elif self.state == 2:
             dPos = self.nest - self.pos
-            print(dPos)
+
             hyp = np.linalg.norm(dPos)
             if hyp < 20:
-
+                if(self.grabbed):
+                    self.grabbed.hurt(1)
                 self.state = 0
                 self.stateTimer = 0
                 self.grabbed = None
@@ -707,7 +714,13 @@ class Dragonfly(Enemy):
                 self.vel *= 0.97
                 self.angle = np.arctan2(self.vel[1],self.vel[0])
                 self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
-                self.grabbed.pos=self.pos+self.vel*20
+                if(self.grabbed):
+                    self.grabbed.pos=self.pos+self.vel*20
+                else:
+                    self.state = 0
+                    self.stateTimer = 0
+                    self.grabbed = None
+                    self.target = None
 
 class Vehicle(Entity):
     def __init__(self, pos,origin):
