@@ -196,6 +196,9 @@ class Chunk():
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 6 # worm
         elif random.random()<0.5:
+            for i in range(random.randint(1,2)):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 7 # dragonfly
+        elif random.random()<0.5:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 1 # box
         else:
@@ -230,6 +233,8 @@ class Chunk():
                     world.entities.append(Bush(pos,origin))
                 elif(tile==6): #Beetle
                     world.entities.append(Worm(pos,origin))
+                elif(tile==7): #Dragonfly
+                    world.entities.append(Dragonfly(pos,origin))
                 if(tile<100): #tile numbers under 100 are entities, over 100 are other types of tiles
                     self.tiles[x][y]=0
     def load(self):
@@ -625,6 +630,84 @@ class Worm(Enemy):
                 if random.random()<0.5:
                     self.target = None
                 self.state = 1
+
+
+class Dragonfly(Enemy):
+    idleImages = [loadImage("things/dragonfly/dragonfly.png",size=gridSize),loadImage("things/dragonfly/dragonflyL.png",size=gridSize),loadImage("things/dragonfly/dragonflyLR.png",size=gridSize),loadImage("things/dragonfly/dragonflyR.png",size=gridSize)]
+    #biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
+        self.image = Dragonfly.idleImages[0]
+        self.size = 24
+        self.health = 5
+        self.grabbed = None
+        self.nest = pos*1
+        self.target = None
+
+    def move(self):
+        """
+        direction = world.player.pos - self.pos
+        self.vel = direction/np.linalg.norm(direction)
+        self.angle = np.arctan2(direction[1], direction[0])
+        """
+        self.stateTimer += 1
+        if self.state == 0:
+
+            if random.random()<0.01:
+                self.target = random.choice(world.entities)
+                if not self.target == self:
+                    dPos=self.target.pos - self.pos
+                    self.angle = np.arctan2(dPos[1],dPos[0])
+            
+            if not self.target:
+                self.angle += 0.02
+            #self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * 0.1
+            #self.vel *= 0.9
+            self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
+
+            if random.random()<0.01 and self.target:
+                if not self.target == self:
+                    dPos = self.target.pos - self.pos
+                    hyp = np.linalg.norm(dPos)
+                    self.state = 1 # attack
+                    self.stateTimer = 0
+
+        elif self.state == 1:
+            if not self.target in world.entities:
+                self.state = 0
+                self.target = None
+            else:
+                dPos = self.target.pos - self.pos
+                hyp = np.linalg.norm(dPos)
+                if hyp < 50:
+
+                    self.state = 2
+                    self.stateTimer = 0
+                    self.grabbed = self.target
+                else:
+                    if hyp>0:
+                        self.vel += dPos/hyp * 0.6
+                    self.vel *= 0.99
+                    self.angle = np.arctan2(self.vel[1],self.vel[0])
+                    self.image = Dragonfly.idleImages[(self.stateTimer%8)//2]
+
+        elif self.state == 2:
+            dPos = self.nest - self.pos
+            print(dPos)
+            hyp = np.linalg.norm(dPos)
+            if hyp < 20:
+
+                self.state = 0
+                self.stateTimer = 0
+                self.grabbed = None
+                self.target = None
+            else:
+                if hyp>0:
+                    self.vel += dPos/hyp * 0.3
+                self.vel *= 0.97
+                self.angle = np.arctan2(self.vel[1],self.vel[0])
+                self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
+                self.grabbed.pos=self.pos+self.vel*20
 
 class Vehicle(Entity):
     def __init__(self, pos,origin):
