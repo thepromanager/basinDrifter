@@ -98,7 +98,7 @@ class World():
         self.size = 1300.0
         self.centerChunk = None
         self.loadedChunks = []
-        self.toBeKilled = []
+        self.toBeKilled = [] # what is this ? ?!???
         #self.surf = pygame.Surface((self.groundSize*4,self.groundSize*4)).convert_alpha()
         #for x in [0,1,2,3]:
         #    for y in [0,1,2,3]:
@@ -124,8 +124,9 @@ class World():
                     inbounds=True
             if(not inbounds):
                 entity.despawn()
-        for entity in self.toBeKilled:
-            self.entities.remove(entity)
+        for entity in self.toBeKilled: # kill stuff when loading chunks? why?!
+            if entity in self.entities:
+                self.entities.remove(entity)
         self.toBeKilled=[] 
         
         for newChunk in newChunks:
@@ -254,20 +255,21 @@ class Entity():
         self.vel = np.array([0.0,0.0])
         self.size = 16 
         self.image = None
+        self.imageSize = gridSize
         self.health = 10
     def update(self):
         self.pos += self.vel
     def draw(self): 
-        world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize//2,gridSize//2), self.angle)
+        world.camera.blitImage(gameDisplay, self.image, self.pos, (self.imageSize//2,self.imageSize//2), self.angle)
     def hurt(self, damage):
         if damage >= self.health:
             self.health=0
-            if self in world.entities:
-                world.entities.remove(self)
-                return True
-
+            self.die()
         else:
             self.health -= damage
+    def die(self):
+        if self in world.entities:
+            world.entities.remove(self)
     def despawn(self):
         if(self.origin[0]):
             world.toBeKilled.append(self)
@@ -279,16 +281,18 @@ class Player(Entity):
     idleImage = loadImage("player/player.png")
     shoot1Image = loadImage("player/shooting.png")
     shoot2Image = loadImage("player/shooting2.png")
+    eat1Image = loadImage("player/eating.png")
+    eat2Image = loadImage("player/eating2.png")
     def __init__(self, pos):
-        super().__init__(pos,(None,(0,0),0))
-        self.speed = 2
+        super().__init__(pos,(None,(0,0),0)) # what is this hack!?
+        self.speed = 0.2
         self.image = Player.idleImage
         self.vehicle = None
         self.state = "walking"
         self.health = 20
+        self.max_health = 20
         self.gun = True
         self.ammo = 10
-        self.max_health = 20
 
     def update(self):
         pressed = pygame.key.get_pressed()
@@ -310,6 +314,9 @@ class Player(Entity):
                 elif(pressed[pygame.K_LSHIFT] and not self.shiftDown):
                     self.shiftDown = True
                     self.enterClosestVehicle()
+                elif(pressed[pygame.K_q] and not self.qDown):
+                    self.qDown = True
+                    self.throwBomb()
                 #shooting logic
                 elif pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True and self.ammo>0:
                     mouse_screen_pos = pygame.mouse.get_pos()
@@ -330,13 +337,14 @@ class Player(Entity):
                         projected_point = self.pos + relative_projected_point
                         distance_to_bullet_2 = (projected_point[0]-entity.pos[0])**2 + (projected_point[1]-entity.pos[1])**2
                         if distance_to_bullet_2 < entity.size**2:
+                            print("you hit a shot at ",entity)
                             entity.hurt(5)
                             distance_to_player = np.linalg.norm(relative_projected_point)
-                            entity.vel += relative_projected_point/distance_to_player * 1000 / (distance_to_player+10)
-                            print("yay")
+                            entity.vel += relative_projected_point/distance_to_player * 10#00 / (distance_to_player+10)
 
             elif self.state == "eating":
                 self.stateTimer+=1
+                self.image = [Player.eat1Image,Player.eat2Image][(self.stateTimer//20)%2]
                 self.vel *= 0.8
                 if(self.stateTimer>10):
                     self.eatClosest()
@@ -364,6 +372,8 @@ class Player(Entity):
 
         if(not pressed[pygame.K_LSHIFT]):
             self.shiftDown = False
+        if(not pressed[pygame.K_q]):
+            self.qDown = False
 
 
         playerChunk = world.getChunk(self.pos)
@@ -374,7 +384,6 @@ class Player(Entity):
         # no torus warping?
 
     def move(self, pressed):
-        speed = self.speed
         direction = np.array([0.0,0.0])
         if(pressed[pygame.K_d] or pressed[pygame.K_RIGHT]):
             direction+=np.array([1.0,0.0])
@@ -386,14 +395,20 @@ class Player(Entity):
             direction+=np.array([0.0,-1.0])
         hyp = np.linalg.norm(direction)
         if hyp > 0:
-            direction = speed * direction / hyp
+            direction = direction / hyp
             #cameraAngle = world.camera.angle
             #R = np.array([[np.cos(cameraAngle), -np.sin(cameraAngle)],
             #            [np.sin(cameraAngle),  np.cos(cameraAngle)]])
             #direction = R@direction
             self.angle = np.arctan2(direction[1], direction[0])
 
-        self.vel = direction
+        self.vel += direction * (self.health/self.max_health) * self.speed
+        self.vel *= 0.9
+
+
+    def throwBomb(self):
+        world.entities.append(Bomb(self.pos))
+
     def eatClosest(self):
         bestDist = 50
         bestFood = None
@@ -448,12 +463,75 @@ class Player(Entity):
         empty_color = (20,0,0)
         pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height, bar_width, bar_height), 0)
         pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/self.max_health, bar_height), 0)
+
+class Bomb(Entity):
+    
+    fuseImages = [loadImage("player/bomb.png"), loadImage("player/bomb2.png")]
+    explosion1 = loadImage("effects/newexplosion1.png",size=gridSize*2)
+    explosion2 = loadImage("effects/newexplosion2.png",size=gridSize*2)
+    explosion3 = loadImage("effects/bigexplosion2.png",size=gridSize*2)
+
+    def __init__(self, pos):
+        super().__init__(pos,(None,(0,0),0)) #"what is this hack!??"
+        self.pos = pos*1
+        self.state = 0
+        self.stateTimer = 0
+        self.friction = 0.9
+        self.health = 2
+
+        self.fuse_time = 200
+
+    def update(self):
+        self.stateTimer += 1
+        self.image = self.fuseImages[(self.stateTimer//10)%2]
+        self.pos += self.vel
+        self.vel *= self.friction
+
+        if self.stateTimer >= self.fuse_time+random.randint(1,100):
+            self.explode()
+
+        if self.state == "smoke":
+            print("old age:", self.stateTimer)
+            self.imageSize = gridSize*2
+            self.vel *= 0
+            if self.stateTimer<6:
+                self.image = self.explosion1
+            elif self.stateTimer<12:
+                self.image = self.explosion2
+            else:
+                self.image = self.explosion3
+            if self.stateTimer > 20:
+                world.entities.remove(self)
+
+    def die(self):
+        if self.state == 0:
+            print("i die -> explode")
+            self.stateTimer = self.fuse_time
+        else:
+            print("i die -> already smoke")
+
+    def explode(self):
+        self.state = "smoke"
+        self.stateTimer = 0
+
+        blast_radius = 100
+
+        for entity in world.entities+[world.player]:
+            dPos = entity.pos - self.pos
+            hyp = np.linalg.norm(dPos)
+
+            if hyp < blast_radius:
+                if hyp:
+                    entity.vel = dPos/hyp * 10
+                entity.hurt(10)
+        self.image = self.explosion1
+
     
 class Enemy(Entity): # or creature rather
 
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
-        self.vehicle = None
+        self.vehicle = None # wut?
         self.friction = 0.9
         self.state = 0
         self.stateTimer = 0
@@ -503,6 +581,7 @@ class Beetle(Enemy):
         self.image = Beetle.idleImages[0]
         self.size = 16
         self.health = 12
+        self.max_health = self.health
 
     def move(self):
         """
@@ -517,7 +596,7 @@ class Beetle(Enemy):
         if self.state == 0:
 
             self.angle += random.random()*0.2 - 0.1
-            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * 0.1
+            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/self.max_health) * 0.1
             self.vel *= 0.9
             self.image = Beetle.idleImages[random.randint(0,1)]
 
@@ -544,7 +623,7 @@ class Beetle(Enemy):
                     self.stateTimer = 0
                 else:
                     if hyp>0:
-                        self.vel += dPos/hyp * 0.2
+                        self.vel += dPos/hyp * (self.health/self.max_health) * 0.2
                     self.vel *= 0.9
                     self.angle = np.arctan2(self.vel[1],self.vel[0])
                     self.image = Beetle.idleImages[random.randint(0,1)]
@@ -569,23 +648,28 @@ class Beetle(Enemy):
 class Worm(Enemy):
     idleImages = [loadImage("things/worm/worm.png"),loadImage("things/worm/worm2.png")]
     biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
+    deadImage = loadImage("things/worm/dead.png")
+
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Worm.idleImages[0]
         self.size = 12
         self.health = 5
+        self.max_health = 5
 
     def move(self):
-        """
-        direction = world.player.pos - self.pos
-        self.vel = direction/np.linalg.norm(direction)
-        self.angle = np.arctan2(direction[1], direction[0])
-        """
+
+
+        if self.health < 4:
+            self.state = "dead"
+            self.image = self.deadImage
+
+
         self.stateTimer += 1
         if self.state == 0:
 
             self.angle += random.random()*0.2 - 0.1
-            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * 0.1
+            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/self.max_health) * 0.1
             self.vel *= 0.9
             self.image = Worm.idleImages[self.stateTimer%32 < 16]
 
@@ -610,7 +694,7 @@ class Worm(Enemy):
                     self.stateTimer = 0
                 else:
                     if hyp>0:
-                        self.vel += dPos/hyp * 0.3
+                        self.vel += dPos/hyp * (self.health/self.max_health) * 0.3
                     self.vel *= 0.9
                     self.angle = np.arctan2(self.vel[1],self.vel[0])
                     self.image = Worm.idleImages[self.stateTimer%16 < 8]
@@ -630,22 +714,20 @@ class Worm(Enemy):
                 if random.random()<0.5:
                     self.target = None
                 self.state = 1
-
-
 class Dragonfly(Enemy):
     idleImages = [loadImage("things/dragonfly/dragonfly.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyL.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyLR.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyR.png",size=gridSize*2)]
     #biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Dragonfly.idleImages[0]
+        self.imageSize = gridSize*2
         self.size = 32
         self.health = 17
+        self.max_health = 17
         self.grabbed = None
         self.nest = pos*1
         self.target = None
 
-    def draw(self): 
-        world.camera.blitImage(gameDisplay, self.image, self.pos, (gridSize,gridSize), self.angle)
     def move(self):
         """
         direction = world.player.pos - self.pos
@@ -692,7 +774,7 @@ class Dragonfly(Enemy):
 
                 else:
                     if hyp>0:
-                        self.vel += dPos/hyp * 0.6
+                        self.vel += dPos/hyp * (self.health/self.max_health) * 0.6
                     self.vel *= 0.99
                     self.angle = np.arctan2(self.vel[1],self.vel[0])
                     self.image = Dragonfly.idleImages[(self.stateTimer%8)//2]
@@ -710,7 +792,7 @@ class Dragonfly(Enemy):
                 self.target = None
             else:
                 if hyp>0:
-                    self.vel += dPos/hyp * 0.3
+                    self.vel += dPos/hyp * (self.health/self.max_health) * 0.3
                 self.vel *= 0.97
                 self.angle = np.arctan2(self.vel[1],self.vel[0])
                 self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
