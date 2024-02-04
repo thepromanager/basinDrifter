@@ -137,7 +137,7 @@ class World():
     def makeRoads(self):
         #for r in range(self.worldsize//3):
         def inbounds(p):
-            if(p[0]>0 and p[0]<self.worldsize and p[1]>0 and p[1]<self.worldsize):
+            if(p[0]>=0 and p[0]<self.worldsize and p[1]>=0 and p[1]<self.worldsize):
                 return True
             return False
         North=np.array([0,-1])
@@ -145,21 +145,19 @@ class World():
         East=np.array([1,0])
         West=np.array([-1,0])
         
-        for i in range(1):
+        for i in range(30):
             startpoint = np.array([7,7])
-            pos = np.array([7,7]) #[random.randint(0,self.worldsize),random.randint(0,self.worldsize)])
+            pos = [random.randint(0,self.worldsize-1),random.randint(0,self.worldsize-1)]
             moving = random.choice([North,West,East,South])
-            for i in range(random.randint(6,10)):
+            for i in range(random.randint(80,100)):
                 if(random.random()>0.7):
                     moving = random.choice([n for n in [North,West,East,South] if not (np.array_equal(n,-moving))])
-                    while(not inbounds(pos+moving)):
-                        moving = random.choice([n for n in [North,West,East,South] if not (np.array_equal(n,-moving))])
+                while(not inbounds(pos+moving)):
+                    moving = random.choice([n for n in [North,West,East,South] if not (np.array_equal(n,-moving))])
                 endpoint = random.randint(3,self.chunksize-4)*np.flip(abs(moving))+(self.chunksize-1)*(moving+abs(moving))//2
-                print(startpoint,endpoint,pos)
-                if(startpoint[0]>endpoint[0]):
-                    self.chunks[pos[1]][pos[0]].roads.append([endpoint,startpoint])
-                else:
-                    self.chunks[pos[1]][pos[0]].roads.append([startpoint,endpoint])
+                #print(startpoint,endpoint,pos)
+
+                self.chunks[pos[1]][pos[0]].roads.append([startpoint,endpoint])
                 startpoint = endpoint-moving*(self.chunksize-1)
                 pos = pos+moving
 
@@ -172,9 +170,9 @@ class World():
 
 
     def loadChunks(self):
-        x=self.centerChunk.gridpos[0]
-        y=self.centerChunk.gridpos[1]
-        print(x,y)
+        x=self.centerChunk.gridpos[1]
+        y=self.centerChunk.gridpos[0]
+        #print(x,y)
         newChunks=[]
         for dx in [-1,0,1]:
             for dy in [-2,-1,0,1,2]: #dx and dy flipped :/
@@ -203,8 +201,9 @@ class World():
         #print(pos,x)
         y=int(pos[1]//self.groundSize)
         if(0<=x and x<self.worldsize and 0<=y and y<self.worldsize):
-            return self.chunks[x][y] 
-
+            return self.chunks[y][x] 
+    def getTile(self,pos):
+        return self.getChunk(pos).getTile(pos)
         
     def update(self):
         self.player.update()
@@ -240,6 +239,7 @@ class World():
 
 class Chunk():
     groundImage=loadImage("tiles/ground.png",size=World.groundSize)
+    sandImage=loadImage("tiles/sand.png",size=World.groundSize)
     roadImage=loadImage("tiles/roadc.png",size=World.tilesize)
     def __init__(self, seed,gridpos):
         self.seed=seed
@@ -247,7 +247,10 @@ class Chunk():
         self.visited=False
         self.gridpos = gridpos
         self.pos = World.groundSize*self.gridpos.astype("float64")
-        self.image = self.groundImage
+        if(self.seed%2==0):
+            self.image = self.groundImage
+        else:
+            self.image = self.sandImage
         self.roads=[]
         #self.toBeKilled = []  # remove this? /b
     def generateTiles(self):
@@ -262,7 +265,7 @@ class Chunk():
         elif random.random()<0.2:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 6 # worm
-        elif random.random()<0.4:
+        elif random.random()<0.1:
             for i in range(random.randint(1,2)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 7 # dragonfly
         elif random.random()<0.5:
@@ -319,6 +322,12 @@ class Chunk():
             return True
         else:
             return False
+    def getTile(self,pos):
+        x=int((pos[0]-self.pos[0])//World.tilesize) #necessary beacuse of numpy?
+        #print(pos,x)
+        y=int((pos[1]-self.pos[1])//World.tilesize)
+        #print(x,y)
+        return self.tiles[x][y] 
 
     def getTilePos(self,x,y):
         return self.pos+np.array([x*World.tilesize,y*World.tilesize])
@@ -351,7 +360,7 @@ class Chunk():
         self.generateEntities()
 
     def draw(self):
-        world.camera.blitImage(gameDisplay, self.image, self.pos+np.array([World.groundSize,World.groundSize]), (World.groundSize,World.groundSize), 0)
+        world.camera.blitImage(gameDisplay, self.image, self.pos+np.array([World.groundSize-0.5*World.tilesize,World.groundSize-0.5*World.tilesize]), (World.groundSize,World.groundSize), 0)
         for x in range(World.chunksize): #scipy.sparse find? onödig optimisering
             for y in range(World.chunksize):
                 tile=self.tiles[x][y]
@@ -614,7 +623,7 @@ class Bomb(Entity):
         if self.state == "idle":
             self.image = self.idleImage
             player_dist = np.linalg.norm(self.pos - world.player.pos)
-            print(player_dist)
+            #print(player_dist)
             # pickup
             if player_dist < 20 and world.player.state == "walking":
                 world.entities.remove(self)
@@ -626,7 +635,7 @@ class Bomb(Entity):
                 self.explode()
 
         elif self.state == "smoke":
-            print("old age:", self.stateTimer)
+            #print("old age:", self.stateTimer)
             self.imageSize = gridSize*2
             self.vel *= 0
             if self.stateTimer<6:
@@ -993,6 +1002,10 @@ class Vehicle(Entity):
         self.health = 20
         self.topspeed = 5.0
         self.acc = 0.1
+
+        self.roadtopspeed = 10.0
+        self.roadacc = 0.2
+
         self.sideFriction = 0.95
         self.forwardFriction = 0.99
         self.braking = 0.9
@@ -1081,8 +1094,12 @@ class Vehicle(Entity):
             self.vel-=self.acc*self.direction()
     
     def accelerate(self):
-        if(self.totalSpeed()<self.topspeed):
-            self.vel+=self.acc*self.direction()
+        if(world.getTile(self.pos)==101):
+            if(self.totalSpeed()<self.roadtopspeed):
+                self.vel+=self.roadacc*self.direction()
+        else:
+            if(self.totalSpeed()<self.topspeed):
+                self.vel+=self.acc*self.direction()
 
 class RaceCar(Vehicle):
     idleImage = loadImage("vehicles/car.png")
@@ -1090,8 +1107,11 @@ class RaceCar(Vehicle):
         super().__init__(pos,origin)
         self.image = RaceCar.idleImage
 
-        self.topspeed = 6.0
-        self.acc = 0.1
+        self.topspeed = 4.5
+        self.acc = 0.08
+        self.roadtopspeed = 10.0
+        self.roadacc = 0.2
+
         self.sideFriction = 0.95
         self.forwardFriction = 0.98
         self.braking = 0.95
@@ -1104,6 +1124,10 @@ class SlowCar(Vehicle):
 
         self.topspeed = 3.5
         self.acc = 0.05
+
+        self.roadtopspeed = 5.0
+        self.roadacc = 0.1
+
         self.sideFriction = 0.9
         self.forwardFriction = 0.99
         self.braking = 0.95
