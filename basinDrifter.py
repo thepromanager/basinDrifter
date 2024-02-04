@@ -87,6 +87,9 @@ class Camera():
         else:
             blitRotate(surf,image, blittingPos, originPos, angle)
 
+    def get_screen_pos(self,pos):
+        return np.array([screenWidth//2, screenHeight//2]) + (pos - self.pos)
+
 class UI():
 
     gunImage = loadImage("UI/gun.png")
@@ -126,13 +129,52 @@ class World():
         #        self.surf.blit(self.groundImage,np.array([x*self.groundSize,y*self.groundSize]))
         
     def generateWorld(self):
+        self.makeRoads()
         center=np.array([self.groundSize*self.worldsize//2,self.groundSize*self.worldsize//2]).astype("float64")
         self.player = Player(center)
         self.centerChunk = self.getChunk(center)
         self.loadChunks()
+    def makeRoads(self):
+        #for r in range(self.worldsize//3):
+        def inbounds(p):
+            if(p[0]>0 and p[0]<self.worldsize and p[1]>0 and p[1]<self.worldsize):
+                return True
+            return False
+        North=np.array([0,-1])
+        South=np.array([0,1])
+        East=np.array([1,0])
+        West=np.array([-1,0])
+        
+        for i in range(1):
+            startpoint = np.array([7,7])
+            pos = np.array([7,7]) #[random.randint(0,self.worldsize),random.randint(0,self.worldsize)])
+            moving = random.choice([North,West,East,South])
+            for i in range(random.randint(6,10)):
+                if(random.random()>0.7):
+                    moving = random.choice([n for n in [North,West,East,South] if not (np.array_equal(n,-moving))])
+                    while(not inbounds(pos+moving)):
+                        moving = random.choice([n for n in [North,West,East,South] if not (np.array_equal(n,-moving))])
+                endpoint = random.randint(3,self.chunksize-4)*np.flip(abs(moving))+(self.chunksize-1)*(moving+abs(moving))//2
+                print(startpoint,endpoint,pos)
+                if(startpoint[0]>endpoint[0]):
+                    self.chunks[pos[1]][pos[0]].roads.append([endpoint,startpoint])
+                else:
+                    self.chunks[pos[1]][pos[0]].roads.append([startpoint,endpoint])
+                startpoint = endpoint-moving*(self.chunksize-1)
+                pos = pos+moving
+
+
+
+
+            
+
+
+
+
     def loadChunks(self):
         x=self.centerChunk.gridpos[0]
         y=self.centerChunk.gridpos[1]
+        print(x,y)
         newChunks=[]
         for dx in [-1,0,1]:
             for dy in [-2,-1,0,1,2]: #dx and dy flipped :/
@@ -198,6 +240,7 @@ class World():
 
 class Chunk():
     groundImage=loadImage("tiles/ground.png",size=World.groundSize)
+    roadImage=loadImage("tiles/roadc.png",size=World.tilesize)
     def __init__(self, seed,gridpos):
         self.seed=seed
         self.tiles=None
@@ -205,6 +248,7 @@ class Chunk():
         self.gridpos = gridpos
         self.pos = World.groundSize*self.gridpos.astype("float64")
         self.image = self.groundImage
+        self.roads=[]
         #self.toBeKilled = []  # remove this? /b
     def generateTiles(self):
         random.seed(self.seed)
@@ -229,7 +273,47 @@ class Chunk():
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 3 # slow car
             for i in range(random.randint(0,random.randint(0,1))):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 4 # race car
+        
+        for road in self.roads:
+            self.makeRoad(road[0],road[1])
         self.visited=True
+
+    def makeRoad(self,start,end):
+        roadsize=3
+        for x in range(World.chunksize): #scipy.sparse find? onödig optimisering
+            for y in range(World.chunksize):
+                tilePos=np.array([x,y])
+               # p=start+(end-start)*min(1,max(0,np.dot((end-start),tilePos-start)/(np.linalg.norm(end-start)**2)))
+                t=min(1,max(0,np.dot((end-start),tilePos-start)/(np.linalg.norm(end-start)**2)))
+                projected=start+(end-start)*t
+                
+                d=np.linalg.norm(projected-tilePos)
+
+                #relative_mouse_x=end[0]-start[0]
+                #relative_mouse_y=end[1]-start[1]
+                #relative_entity_pos = np.array([x,y])-start
+                #dot_product = max(0,relative_entity_pos[0]*relative_mouse_x + relative_entity_pos[1]*relative_mouse_y) #dont shoot backwards
+                #relative_projected_point = np.array((relative_mouse_x, relative_mouse_y)) * dot_product / (relative_mouse_x**2 + relative_mouse_y**2)
+                #projected_point = start + relative_projected_point
+                #distance_to_bullet_2 = (projected_point[0]-x)**2 + (projected_point[1]-y)**2
+                if d < roadsize:
+                    self.tiles[x][y]=101 
+
+        '''
+        if(start[0]-end[0] != 0):
+            for x in range(start[0],end[0]+1):
+                frac=abs((x-start[0])/(end[0]-start[0]))
+                
+                y = round(start[1]*(1-frac)+end[1]*frac)
+                self.tiles[x][y]=101 # road
+        if(start[1]-end[1] != 0):
+            for y in range(start[1],end[1]+1):
+                frac=abs((y-start[1])/(end[1]-start[1]))
+                x = round(start[0]*(1-frac)+end[0]*frac)
+                print(frac, x,y)
+                self.tiles[x][y]=101 # road
+            '''
+
     def inbounds(self,pos):
         if(pos[0]>=self.pos[0] and pos[1]>=self.pos[1] and pos[0]<self.pos[0]+world.groundSize and pos[1]<self.pos[1]+world.groundSize):
             return True
@@ -258,6 +342,7 @@ class Chunk():
                     world.entities.append(Worm(pos,origin))
                 elif(tile==7): #Dragonfly
                     world.entities.append(Dragonfly(pos,origin))
+
                 if(tile<100): #tile numbers under 100 are entities, over 100 are other types of tiles
                     self.tiles[x][y]=0
     def load(self):
@@ -266,7 +351,16 @@ class Chunk():
         self.generateEntities()
 
     def draw(self):
-        world.camera.blitImage(gameDisplay, self.image, self.pos+np.array([World.groundSize,World.groundSize]), (World.groundSize,World.groundSize), 0)  
+        world.camera.blitImage(gameDisplay, self.image, self.pos+np.array([World.groundSize,World.groundSize]), (World.groundSize,World.groundSize), 0)
+        for x in range(World.chunksize): #scipy.sparse find? onödig optimisering
+            for y in range(World.chunksize):
+                tile=self.tiles[x][y]
+                if(tile==101):
+                    world.camera.blitImage(gameDisplay, self.roadImage, self.pos+np.array([x,y])*World.tilesize, (World.tilesize//2,World.tilesize//2), 0)
+        pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([-0.5,13.5])*World.tilesize)),3)
+        pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([13.5,-.5])*World.tilesize)),3)
+    
+
 
 
 class Entity():
