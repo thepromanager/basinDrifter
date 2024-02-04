@@ -72,6 +72,9 @@ class Camera():
             self.angle = self.angle*(1-angleSpeed) + targetAngle*angleSpeed
 
     def blitImage(self, surf, image, pos, originPos, angle):
+        if image == None:
+            raise Exception("Drawing with image==None")
+
         #cameraAngle = self.angle
         #R = np.array([[np.cos(-cameraAngle), -np.sin(-cameraAngle)],
         #              [np.sin(-cameraAngle),  np.cos(-cameraAngle)]])
@@ -84,9 +87,27 @@ class Camera():
         else:
             blitRotate(surf,image, blittingPos, originPos, angle)
 
+class UI():
+
+    gunImage = loadImage("UI/gun.png")
+    bulletImage = loadImage("UI/bullet.png", 32)
+    bombImage = loadImage("UI/bomb.png")
+
+    @classmethod
+    def draw(cls, game):
+        # GUN
+        gameDisplay.blit(cls.gunImage, (0,screenHeight-100))
+        for i in range(game.player.ammo):
+            gameDisplay.blit(cls.bulletImage, (30+10*i,screenHeight-60))
+        # BOMBS
+        for i in range(game.player.bombs):
+            gameDisplay.blit(cls.bombImage, (-10+ 10*i,screenHeight-150))
+
+
+
 class World():
     #groundSize = 448
-    worldsize = 15 #chunks x chunks
+    worldsize = 100 #chunks x chunks
     chunksize = 14 #tiles x tiles #14*32 = 448 och 448 är stort nog för att man inte ska se world border (laggar om den är större?)
     tilesize = 32 #pixels x pixels
     groundSize = chunksize*tilesize #448
@@ -160,6 +181,7 @@ class World():
         for entity in self.entities:
             entity.draw()
         self.player.draw()
+        UI.draw(self)
 
     def setInbounds(self,pos):
         x=pos[0]
@@ -187,16 +209,16 @@ class Chunk():
     def generateTiles(self):
         random.seed(self.seed)
         self.tiles=[[0 for i in range(World.chunksize)] for j in range(World.chunksize)] #easy spatial lookup but slow iteration?
-        if random.random()<0.5:
+        if random.random()<0.2:
             for i in range(random.randint(4,10)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 5 # bush
-        elif random.random()<0.5:
+        elif random.random()<0.2:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 2 # beetle
-        elif random.random()<0.5:
+        elif random.random()<0.2:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 6 # worm
-        elif random.random()<0.5:
+        elif random.random()<0.4:
             for i in range(random.randint(1,2)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 7 # dragonfly
         elif random.random()<0.5:
@@ -260,6 +282,7 @@ class Entity():
     def update(self):
         self.pos += self.vel
     def draw(self): 
+        #print("in entity:", self, self.image)
         world.camera.blitImage(gameDisplay, self.image, self.pos, (self.imageSize//2,self.imageSize//2), self.angle)
     def hurt(self, damage):
         if damage >= self.health:
@@ -293,12 +316,13 @@ class Player(Entity):
         self.max_health = 20
         self.gun = True
         self.ammo = 10
+        self.bombs = 10
 
     def update(self):
         pressed = pygame.key.get_pressed()
         if self.vehicle==None:
             if self.state == "tumbling":
-                self.health -= speed
+                self.health -= np.linalg.norm(self.vel)
                 self.vel *= 0.99
                 self.image = Player.sidleImage
                 self.angle = random.random()*np.pi*2
@@ -407,7 +431,11 @@ class Player(Entity):
 
 
     def throwBomb(self):
-        world.entities.append(Bomb(self.pos))
+        if self.bombs>0:
+            self.bombs -= 1
+            bomb = Bomb(self.pos)
+            bomb.state = "fusing"
+            world.entities.append(bomb)
 
     def eatClosest(self):
         bestDist = 50
@@ -450,7 +478,7 @@ class Player(Entity):
        
     def draw(self):
         if(not self.vehicle):
-            world.camera.blitImage(gameDisplay, self.image, self.pos, np.array([32.0,32.0]), self.angle)
+            world.camera.blitImage(gameDisplay, self.image, self.pos, np.array([self.imageSize//2,self.imageSize//2]), self.angle)
             #gameDisplay.blit(self.image,self.pos+np.array([-32.0,-32.0])) #-gridSize*self.size
             
         else:
@@ -466,7 +494,8 @@ class Player(Entity):
 
 class Bomb(Entity):
     
-    fuseImages = [loadImage("player/bomb.png"), loadImage("player/bomb2.png")]
+    idleImage = loadImage("things/bomb/bomb.png")
+    fuseImages = [loadImage("things/bomb/livebomb1.png"), loadImage("things/bomb/livebomb2.png")]
     explosion1 = loadImage("effects/newexplosion1.png",size=gridSize*2)
     explosion2 = loadImage("effects/newexplosion2.png",size=gridSize*2)
     explosion3 = loadImage("effects/bigexplosion2.png",size=gridSize*2)
@@ -474,23 +503,35 @@ class Bomb(Entity):
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0)) #"what is this hack!??"
         self.pos = pos*1
-        self.state = 0
+        self.state = "idle"
         self.stateTimer = 0
         self.friction = 0.9
         self.health = 2
 
         self.fuse_time = 200
 
+        self.image = self.idleImage
+
     def update(self):
         self.stateTimer += 1
-        self.image = self.fuseImages[(self.stateTimer//10)%2]
         self.pos += self.vel
         self.vel *= self.friction
 
-        if self.stateTimer >= self.fuse_time+random.randint(1,100):
-            self.explode()
+        if self.state == "idle":
+            self.image = self.idleImage
+            player_dist = np.linalg.norm(self.pos - world.player.pos)
+            print(player_dist)
+            # pickup
+            if player_dist < 20 and world.player.state == "walking":
+                world.entities.remove(self)
+                world.player.bombs += 1
 
-        if self.state == "smoke":
+        elif self.state == "fusing":
+            self.image = self.fuseImages[(self.stateTimer//10)%2]
+            if self.stateTimer >= self.fuse_time+random.randint(1,100):
+                self.explode()
+
+        elif self.state == "smoke":
             print("old age:", self.stateTimer)
             self.imageSize = gridSize*2
             self.vel *= 0
@@ -503,12 +544,20 @@ class Bomb(Entity):
             if self.stateTimer > 20:
                 world.entities.remove(self)
 
+        else:
+            print(self.state)
+
     def die(self):
-        if self.state == 0:
+        if self.state != "smoke":
             print("i die -> explode")
+            self.state = "fusing"
             self.stateTimer = self.fuse_time
         else:
             print("i die -> already smoke")
+
+    def draw(self):
+        print(self.image,self.stateTimer,self.fuse_time,self.state)
+        super().draw()
 
     def explode(self):
         self.state = "smoke"
@@ -525,7 +574,32 @@ class Bomb(Entity):
                     entity.vel = dPos/hyp * 10
                 entity.hurt(10)
         self.image = self.explosion1
+class Bullet(Entity):
+    imageSize = 32
+    idleImage = loadImage("UI/bullet.png", imageSize)
 
+    def __init__(self, pos):
+        super().__init__(pos,(None,(0,0),0)) #"what is this hack!??"
+        self.pos = pos*1
+        #self.state = "idle"
+        #self.stateTimer = 0
+        self.friction = 0.9
+        self.health = 1
+        self.image = self.idleImage
+        #self.small = True
+
+
+    def update(self):
+        #self.stateTimer += 1
+        self.pos += self.vel
+        self.vel *= self.friction
+
+        if True:
+            self.image = self.idleImage
+            player_dist = np.linalg.norm(self.pos-world.player.pos)
+            if player_dist < 20 and world.player.state == "walking":
+                world.entities.remove(self)
+                world.player.ammo += 1
     
 class Enemy(Entity): # or creature rather
 
@@ -559,6 +633,14 @@ class Box(Entity):
     def update(self):
         super().update()
         self.vel *= self.friction
+
+    def die(self):
+        super().die()
+        for i in range(random.randint(1,5)):
+            loot = random.choice([Bomb,Bullet,Bullet])(self.pos)
+            loot.vel = np.array([random.uniform(-2,2),random.uniform(-2,2)])
+            world.entities.append(loot)
+
 class Bush(Entity):
     idleImage = loadImage("things/bush.png")
     def __init__(self, pos,origin):
@@ -633,15 +715,22 @@ class Beetle(Enemy):
         elif self.state == 2:
             self.stateTimer += 1
 
-            if self.stateTimer < 20:
+            if self.stateTimer < 20: # prebite
                 self.image = self.biteImages[0]
-            elif self.stateTimer == 20:
+                # face correctly
+                dPos = self.target.pos - self.pos
+                hyp = np.linalg.norm(dPos)
+                if hyp>0:
+                    self.vel += dPos/hyp * (self.health/self.max_health) * 0.1
+                self.vel *= 0.9
+                self.angle = np.arctan2(self.vel[1],self.vel[0])
+            elif self.stateTimer == 20: # bite
                 if self.target:
                     dPos = self.target.pos - self.pos
                     hyp = np.linalg.norm(dPos)
                     if hyp < 40:
                         self.target.hurt(4)
-            elif self.stateTimer < 60:
+            elif self.stateTimer < 60: # ending lag
                 self.image = self.biteImages[1]
             else:
                 self.state = 1
