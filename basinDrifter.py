@@ -362,7 +362,7 @@ class Player(Entity):
             self.state = "driving"
             self.vehicle.move(pressed)
             self.pos = self.vehicle.pos*1 # dont remove *1! acts as copying array!!!
-            self.vel = self.vehicle.vel/2
+            self.vel = self.vehicle.vel
             self.angle = self.vehicle.angle
 
             if(pressed[pygame.K_LSHIFT] and not self.shiftDown):
@@ -428,7 +428,6 @@ class Player(Entity):
         # find closest enemy to eat
         bestDist = 50
         bestVehicle = None
-        self.state = "driving"
         for entity in world.entities:
             if(isinstance(entity, Vehicle)):
                 dist = np.linalg.norm(entity.pos - self.pos)
@@ -438,6 +437,7 @@ class Player(Entity):
 
         # enter
         if bestVehicle:
+            self.state = "driving"
             self.vehicle = bestVehicle
 
     def exitVehicle(self):
