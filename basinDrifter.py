@@ -262,7 +262,7 @@ class Chunk():
         elif random.random()<0.2:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 6 # worm
-        elif random.random()<0.4:
+        elif random.random()<0.1:
             for i in range(random.randint(1,2)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 7 # dragonfly
         elif random.random()<0.5:
@@ -409,14 +409,14 @@ class Player(Entity):
         self.health = 20
         self.max_health = 20
         self.gun = True
-        self.ammo = 10
-        self.bombs = 10
+        self.ammo = 1
+        self.bombs = 0
 
     def update(self):
         pressed = pygame.key.get_pressed()
         if self.vehicle==None:
             if self.state == "tumbling":
-                self.health -= np.linalg.norm(self.vel)
+                self.health -= np.linalg.norm(self.vel)*0.01
                 self.vel *= 0.99
                 self.image = Player.sidleImage
                 self.angle = random.random()*np.pi*2
@@ -436,29 +436,8 @@ class Player(Entity):
                     self.qDown = True
                     self.throwBomb()
                 #shooting logic
-                elif pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True and self.ammo>0:
-                    mouse_screen_pos = pygame.mouse.get_pos()
-                    relative_mouse_x = mouse_screen_pos[0] - screenWidth//2
-                    relative_mouse_y = mouse_screen_pos[1] - screenHeight//2
-                    self.angle = np.arctan2(relative_mouse_y, relative_mouse_x)
-                    self.image = Player.shoot2Image
-                    self.stateTimer = 0
-                    self.state = "shooting"
-                    self.ammo -= 1
-                    self.vel = np.array((0.,0.))
-                    for entity in world.entities:
-                        relative_entity_pos = entity.pos - self.pos
-                        # bullets are rays
-                        # use projection formula to find closest point on bullet ray (ie projected point)
-                        dot_product = max(0, relative_entity_pos[0]*relative_mouse_x + relative_entity_pos[1]*relative_mouse_y) #dont shoot backwards
-                        relative_projected_point = np.array((relative_mouse_x, relative_mouse_y)) * dot_product / (relative_mouse_x**2 + relative_mouse_y**2)
-                        projected_point = self.pos + relative_projected_point
-                        distance_to_bullet_2 = (projected_point[0]-entity.pos[0])**2 + (projected_point[1]-entity.pos[1])**2
-                        if distance_to_bullet_2 < entity.size**2:
-                            print("you hit a shot at ",entity)
-                            entity.hurt(5)
-                            distance_to_player = np.linalg.norm(relative_projected_point)
-                            entity.vel += relative_projected_point/distance_to_player * 10#00 / (distance_to_player+10)
+                elif pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True:
+                    self.shoot()
 
             elif self.state == "eating":
                 self.stateTimer+=1
@@ -530,6 +509,33 @@ class Player(Entity):
             bomb = Bomb(self.pos)
             bomb.state = "fusing"
             world.entities.append(bomb)
+
+    def shoot(self):
+        if self.ammo>0:
+            mouse_screen_pos = pygame.mouse.get_pos()
+            relative_mouse_x = mouse_screen_pos[0] - screenWidth//2
+            relative_mouse_y = mouse_screen_pos[1] - screenHeight//2
+            self.angle = np.arctan2(relative_mouse_y, relative_mouse_x)
+            self.image = Player.shoot2Image
+            self.stateTimer = 0
+            self.state = "shooting"
+            self.ammo -= 1
+            self.vel = np.array((0.,0.))
+
+            for entity in world.entities:
+                relative_entity_pos = entity.pos - self.pos
+                # bullets are rays
+                # use projection formula to find closest point on bullet ray (ie projected point)
+                dot_product = max(0, relative_entity_pos[0]*relative_mouse_x + relative_entity_pos[1]*relative_mouse_y) #dont shoot backwards
+                relative_projected_point = np.array((relative_mouse_x, relative_mouse_y)) * dot_product / (relative_mouse_x**2 + relative_mouse_y**2)
+                projected_point = self.pos + relative_projected_point
+                distance_to_bullet_2 = (projected_point[0]-entity.pos[0])**2 + (projected_point[1]-entity.pos[1])**2
+                if distance_to_bullet_2 < entity.size**2:
+                    print("you hit a shot at ",entity)
+                    entity.hurt(5)
+                    distance_to_player = np.linalg.norm(relative_projected_point)
+                    entity.vel += relative_projected_point/distance_to_player * 10#00 / (distance_to_player+10)
+
 
     def eatClosest(self):
         bestDist = 50
@@ -772,7 +778,7 @@ class Beetle(Enemy):
         if self.state == 0:
 
             self.angle += random.random()*0.2 - 0.1
-            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/self.max_health) * 0.1
+            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/self.max_health) * 0.2
             self.vel *= 0.9
             self.image = Beetle.idleImages[random.randint(0,1)]
 
@@ -799,7 +805,7 @@ class Beetle(Enemy):
                     self.stateTimer = 0
                 else:
                     if hyp>0:
-                        self.vel += dPos/hyp * (self.health/self.max_health) * 0.2
+                        self.vel += dPos/hyp * (self.health/self.max_health) * 0.4
                     self.vel *= 0.9
                     self.angle = np.arctan2(self.vel[1],self.vel[0])
                     self.image = Beetle.idleImages[random.randint(0,1)]
@@ -815,7 +821,7 @@ class Beetle(Enemy):
                 dPos = self.target.pos - self.pos
                 hyp = np.linalg.norm(dPos)
                 if hyp>0:
-                    self.vel += dPos/hyp * (self.health/self.max_health) * 0.1
+                    self.vel += dPos/hyp * (self.health/self.max_health) * 0.4
                 self.vel *= 0.9
                 self.angle = np.arctan2(self.vel[1],self.vel[0])
             elif self.stateTimer == 20: # bite
@@ -1002,6 +1008,9 @@ class Vehicle(Entity):
         #self.turnTraction = 10.0
         #self.drift = 
         self.image = None
+
+        self.fuel = 100
+
     def direction(self,shift=0):
         return np.array([np.cos(self.angle+shift),np.sin(self.angle+shift)])
 
@@ -1081,8 +1090,10 @@ class Vehicle(Entity):
             self.vel-=self.acc*self.direction()
     
     def accelerate(self):
-        if(self.totalSpeed()<self.topspeed):
-            self.vel+=self.acc*self.direction()
+        if self.fuel > 0:
+            if(self.totalSpeed()<self.topspeed):
+                self.vel+=self.acc*self.direction()
+                self.fuel -= 1
 
 class RaceCar(Vehicle):
     idleImage = loadImage("vehicles/car.png")
