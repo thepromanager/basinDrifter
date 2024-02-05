@@ -21,10 +21,11 @@ sandImage=basinDrifter.loadImage("tiles/sand.png",size=factor)
 for x in range(world.worldsize):
 	for y in range(world.worldsize):
 		c = world.chunks[y][x]
-		if(c.seed%2==0):
+
+		if(c.chunktype%2==0):
 			gameDisplay.blit(groundImage,(x*factor,y*factor,factor,factor))
 			#pygame.draw.rect(gameDisplay,(0,x,y),(x*factor,y*factor,factor,factor))
-		if(c.seed%2!=0):
+		if(c.chunktype%2!=0):
 			gameDisplay.blit(sandImage,(x*factor,y*factor,factor,factor))
 			#pygame.draw.rect(gameDisplay,(255,255,255),(x*factor,y*factor,factor,factor))
 		for [startpoint,endpoint] in c.roads:

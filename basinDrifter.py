@@ -4,6 +4,7 @@ import time
 import os
 import math
 import numpy as np
+import noise
 
 # tiles
 # health bar
@@ -116,7 +117,7 @@ class World():
     groundSize = chunksize*tilesize #448
     def __init__(self):
         self.player=None
-        self.chunks = [[Chunk(random.randint(1,1000000),np.array([i,j])) for i in range(self.worldsize)] for j in range(self.worldsize)]
+        self.chunks = []#[[Chunk(random.randint(1,100000),np.array([i,j])) for i in range(self.worldsize)] for j in range(self.worldsize)]
         self.entities = []
         self.camera = Camera()
         self.size = 1300.0
@@ -129,6 +130,15 @@ class World():
         #        self.surf.blit(self.groundImage,np.array([x*self.groundSize,y*self.groundSize]))
         
     def generateWorld(self):
+        SEED = random.random()*100
+        scale = 0.02
+        self.chunks = [[0 for i in range(self.worldsize)] for j in range(self.worldsize)]
+        for x in range(World.worldsize):
+            for y in range(World.worldsize):
+                biome = 1*(noise.pnoise2(SEED+x * scale,SEED+y * scale, octaves=9, persistence=0.5, lacunarity=3)>0)
+
+                self.chunks[y][x]=Chunk(random.randint(1,100000),np.array([x,y]),biome)
+
         self.makeRoads()
         center=np.array([self.groundSize*self.worldsize//2,self.groundSize*self.worldsize//2]).astype("float64")
         self.centerChunk = self.getChunk(center)
@@ -162,15 +172,6 @@ class World():
                 self.chunks[pos[1]][pos[0]].roads.append([startpoint,endpoint])
                 startpoint = endpoint-moving*(self.chunksize-1)
                 pos = pos+moving
-
-
-
-
-            
-
-
-
-
     def loadChunks(self):
         x=self.centerChunk.gridpos[1]
         y=self.centerChunk.gridpos[0]
@@ -205,15 +206,13 @@ class World():
         if(0<=x and x<self.worldsize and 0<=y and y<self.worldsize):
             return self.chunks[y][x] 
     def getTile(self,pos):
-        return self.getChunk(pos).getTile(pos)
-        
+        return self.getChunk(pos).getTile(pos)        
     def update(self):
         self.player.update()
         for entity in self.entities:
             entity.update()
 
         self.camera.update()
-
     def draw(self):
         
         
@@ -225,7 +224,6 @@ class World():
             entity.draw()
         self.player.draw()
         UI.draw(self)
-
     def setInbounds(self,pos):
         x=pos[0]
         y=pos[1]
@@ -243,13 +241,14 @@ class Chunk():
     groundImage=loadImage("tiles/ground.png",size=World.groundSize)
     sandImage=loadImage("tiles/sand.png",size=World.groundSize)
     roadImage=loadImage("tiles/roadc.png",size=World.tilesize)
-    def __init__(self, seed,gridpos):
+    def __init__(self, seed,gridpos,chunktype):
         self.seed=seed
         self.tiles=None
         self.visited=False
         self.gridpos = gridpos
         self.pos = World.groundSize*self.gridpos.astype("float64")
-        if(self.seed%2==0):
+        self.chunktype=chunktype
+        if(self.chunktype%2==0):
             self.image = self.groundImage
         else:
             self.image = self.sandImage
@@ -368,8 +367,8 @@ class Chunk():
                 tile=self.tiles[x][y]
                 if(tile==101):
                     world.camera.blitImage(gameDisplay, self.roadImage, self.pos+np.array([x,y])*World.tilesize, (World.tilesize//2,World.tilesize//2), 0)
-        pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([-0.5,13.5])*World.tilesize)),3)
-        pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([13.5,-.5])*World.tilesize)),3)
+        #pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([-0.5,13.5])*World.tilesize)),3)
+        #pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([13.5,-.5])*World.tilesize)),3)
     
 
 
@@ -1024,7 +1023,7 @@ class Vehicle(Entity):
         #self.drift = 
         self.image = None
 
-        self.fuel = 100
+        self.fuel = 2000
 
     def direction(self,shift=0):
         return np.array([np.cos(self.angle+shift),np.sin(self.angle+shift)])
