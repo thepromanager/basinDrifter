@@ -131,9 +131,11 @@ class World():
     def generateWorld(self):
         self.makeRoads()
         center=np.array([self.groundSize*self.worldsize//2,self.groundSize*self.worldsize//2]).astype("float64")
-        self.player = Player(center)
         self.centerChunk = self.getChunk(center)
-        self.loadChunks()
+        if __name__ == '__main__':
+            self.player = Player(center)
+            
+            self.loadChunks()
     def makeRoads(self):
         #for r in range(self.worldsize//3):
         def inbounds(p):
@@ -1154,7 +1156,8 @@ def main():
     pygame.quit()
     quit()
 
+if __name__ == '__main__':
 
-world = World() 
-world.generateWorld()
-main()
+    world = World() 
+    world.generateWorld()
+    main()
