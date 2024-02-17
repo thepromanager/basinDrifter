@@ -15,7 +15,8 @@ import noise
 # lighting?
 #inside houses?
 
-#enemies with different behaviour, fågel, ko, 
+
+#enemies with different behaviour, fågel, ko, Carnivour and herbiovre, berry bushes and behaviour change
 #bombs, melee, ammo, crates filled with goodies
 #biomes, chunks, rivers, roads, collide walls, structures, tiles 
 
@@ -57,6 +58,23 @@ def blitRotate(surf,image, pos, originPos, angle):
     # get a rotated image
     rotated_image = pygame.transform.rotate(image, angle+180)
     surf.blit(rotated_image, origin)
+
+def crIntersect(circlepos, radius, rectcenter,width,height):
+    circleDistance = np.abs(circlepos-rectcenter)
+
+    if (circleDistance[0] > (width/2 + radius)):
+        return False
+    if (circleDistance[1] > (height/2 + radius)):
+        return False
+
+    return True
+    if (circleDistance[0] <= (width/2)):
+        return True
+    if (circleDistance[1] <= (height/2)):
+        return True
+
+    cornerDistance_sq = (circleDistance[0] - width/2)**2+(circleDistance[1] - height/2)**2
+    return cornerDistance_sq <= (radius**2)
 
 class Camera():
 
@@ -125,6 +143,8 @@ class UI():
 
 
 
+
+
 class World():
     #groundSize = 448
     worldsize = 100 #chunks x chunks
@@ -145,7 +165,17 @@ class World():
         #for x in [0,1,2,3]:
         #    for y in [0,1,2,3]:
         #        self.surf.blit(self.groundImage,np.array([x*self.groundSize,y*self.groundSize]))
-        
+    def getTarget(self,pos,distance=None,condition=lambda x:True,includePlayer=True,extraPlayerChance=0):
+        targets=self.entities+[world.player]*includePlayer
+        #filter according to range
+        targets = filter(lambda x:np.linalg.norm(x.pos-pos)<distance,targets)
+        targets = filter(lambda x:x.visible,targets)
+        targets = filter(condition,targets)
+        target = random.choice(targets)
+        if(random.random()<extraPlayerChance and world.player.visible):
+            target = world.player
+
+        return target
     def generateWorld(self):
         SEED = random.random()*100
         scale = 0.02
@@ -183,6 +213,7 @@ class World():
                     moving = random.choice([n for n in [North,West,East,South] if not (np.array_equal(n,-moving))])
                 while(not inbounds(pos+moving)):
                     moving = random.choice([n for n in [North,West,East,South] if not (np.array_equal(n,-moving))])
+                #make endpoint np.array based on randomness and moving direction
                 endpoint = random.randint(3,self.chunksize-4)*np.flip(abs(moving))+(self.chunksize-1)*(moving+abs(moving))//2
                 #print(startpoint,endpoint,pos)
 
@@ -223,7 +254,7 @@ class World():
         if(0<=x and x<self.worldsize and 0<=y and y<self.worldsize):
             return self.chunks[y][x] 
     def getTile(self,pos):
-        return self.getChunk(pos).getTile(pos)        
+        return self.getChunk(pos).getTile(pos) # tile type        
     def update(self):
         self.player.update()
         for entity in self.entities:
@@ -232,6 +263,25 @@ class World():
             effect.update()
 
         self.camera.update()
+    def tileCollision(self,pos,radius):
+        #get all possible tiles
+        tiles=[]
+        n = radius//self.tilesize + 1
+        for x in range(-n,n+1):
+            for y in range(-n,n+1):
+                offsetpos=pos+np.array([x*self.tilesize,y*self.tilesize])
+                chunk = world.getChunk(offsetpos)
+                if chunk.tiles: 
+                    tiles.append((chunk.getTilePosfromPos(offsetpos),self.getTile(offsetpos)))
+        for tile in tiles:
+            if(tile[1]>200):        
+                if(crIntersect(pos, radius, tile[0],self.tilesize,self.tilesize)):
+                    print("collision")
+                    return True
+        
+        return False
+
+
     def draw(self):
         
         
@@ -248,7 +298,7 @@ class World():
     def setInbounds(self,pos):
         x=pos[0]
         y=pos[1]
-        if(x>self.player.pos[0]+self.size/2): # the world is a 1000x1000 torus around the player
+        if(x>self.player.pos[0]+self.size/2): 
             x-=self.size
         if(x<self.player.pos[0]-self.size/2):
             x+=self.size
@@ -262,6 +312,7 @@ class Chunk():
     groundImage=loadImage("tiles/ground.png",size=World.groundSize)
     sandImage=loadImage("tiles/sand.png",size=World.groundSize)
     roadImage=loadImage("tiles/roadc.png",size=World.tilesize)
+    wallImage=loadImage("tiles/wall.png",size=World.tilesize)
     def __init__(self, seed,gridpos,chunktype):
         self.seed=seed
         self.tiles=None
@@ -293,6 +344,8 @@ class Chunk():
         elif random.random()<0.5:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 1 # box
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 201 # wall
+                
         else:
             for i in range(random.randint(0,random.randint(0,1))):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 3 # slow car
@@ -308,36 +361,11 @@ class Chunk():
         for x in range(World.chunksize): #scipy.sparse find? onödig optimisering
             for y in range(World.chunksize):
                 tilePos=np.array([x,y])
-               # p=start+(end-start)*min(1,max(0,np.dot((end-start),tilePos-start)/(np.linalg.norm(end-start)**2)))
                 t=min(1,max(0,np.dot((end-start),tilePos-start)/(np.linalg.norm(end-start)**2)))
-                projected=start+(end-start)*t
-                
+                projected=start+(end-start)*t              
                 d=np.linalg.norm(projected-tilePos)
-
-                #relative_mouse_x=end[0]-start[0]
-                #relative_mouse_y=end[1]-start[1]
-                #relative_entity_pos = np.array([x,y])-start
-                #dot_product = max(0,relative_entity_pos[0]*relative_mouse_x + relative_entity_pos[1]*relative_mouse_y) #dont shoot backwards
-                #relative_projected_point = np.array((relative_mouse_x, relative_mouse_y)) * dot_product / (relative_mouse_x**2 + relative_mouse_y**2)
-                #projected_point = start + relative_projected_point
-                #distance_to_bullet_2 = (projected_point[0]-x)**2 + (projected_point[1]-y)**2
                 if d < roadsize:
                     self.tiles[x][y]=101 
-
-        '''
-        if(start[0]-end[0] != 0):
-            for x in range(start[0],end[0]+1):
-                frac=abs((x-start[0])/(end[0]-start[0]))
-                
-                y = round(start[1]*(1-frac)+end[1]*frac)
-                self.tiles[x][y]=101 # road
-        if(start[1]-end[1] != 0):
-            for y in range(start[1],end[1]+1):
-                frac=abs((y-start[1])/(end[1]-start[1]))
-                x = round(start[0]*(1-frac)+end[0]*frac)
-                print(frac, x,y)
-                self.tiles[x][y]=101 # road
-            '''
 
     def inbounds(self,pos):
         if(pos[0]>=self.pos[0] and pos[1]>=self.pos[1] and pos[0]<self.pos[0]+world.groundSize and pos[1]<self.pos[1]+world.groundSize):
@@ -352,7 +380,12 @@ class Chunk():
         return self.tiles[x][y] 
 
     def getTilePos(self,x,y):
+        return self.pos+np.array([x*World.tilesize,y*World.tilesize]) # local chunk coordinate -> global pos
+    def getTilePosfromPos(self,pos):
+        x=int((pos[0]-self.pos[0])//World.tilesize)
+        y=int((pos[1]-self.pos[1])//World.tilesize)
         return self.pos+np.array([x*World.tilesize,y*World.tilesize])
+
     def generateEntities(self):
         for x in range(World.chunksize): #scipy.sparse find? onödig optimisering
             for y in range(World.chunksize):
@@ -376,6 +409,10 @@ class Chunk():
 
                 if(tile<100): #tile numbers under 100 are entities, over 100 are other types of tiles
                     self.tiles[x][y]=0
+
+                #101 road
+
+                #>200 collible
     def load(self):
         if(not self.visited):
             self.generateTiles()
@@ -388,8 +425,11 @@ class Chunk():
                 tile=self.tiles[x][y]
                 if(tile==101):
                     world.camera.blitImage(gameDisplay, self.roadImage, self.pos+np.array([x,y])*World.tilesize, (World.tilesize//2,World.tilesize//2), 0)
-        #pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([-0.5,13.5])*World.tilesize)),3)
-        #pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([13.5,-.5])*World.tilesize)),3)
+                if(tile==201):
+                    world.camera.blitImage(gameDisplay, self.wallImage, self.pos+np.array([x,y])*World.tilesize, (World.tilesize//2,World.tilesize//2), 0)
+
+        pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([-0.5,13.5])*World.tilesize)),3)
+        pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos+np.array([-0.5,-0.5])*World.tilesize),world.camera.get_screen_pos((self.pos+np.array([13.5,-.5])*World.tilesize)),3)
     
 
 
@@ -405,11 +445,15 @@ class Entity():
         self.size = 16 
         self.image = None
         self.health = 10
+        self.visible = True
     def update(self):
         self.pos += self.vel
     def draw(self): 
         #print("in entity:", self, self.image)
+        pygame.draw.circle(gameDisplay,(255,0,0),world.camera.get_screen_pos(self.pos),self.size)
         world.camera.blitImage(gameDisplay, self.image, self.pos, (self.imageSize//2,self.imageSize//2), self.angle)
+        
+        
     def hurt(self, damage):
         if damage >= self.health:
             self.health=0
@@ -424,7 +468,7 @@ class Entity():
             world.toBeKilled.append(self)
             self.origin[0].tiles[self.origin[1][0]][self.origin[1][1]]=self.origin[2]
         else:
-            print("couldnt despawn: no origin")
+            print(self,"couldnt despawn: no origin")
 class Player(Entity):
     sidleImage = loadImage("player/player3.png")
     idleImage = loadImage("player/player.png")
@@ -610,10 +654,12 @@ class Player(Entity):
         # enter
         bestVehicle = self.findClosestEntity(condition = lambda x:isinstance(x,Vehicle))
         if bestVehicle:
+            self.visible=False
             self.state = "driving"
             self.vehicle = bestVehicle
     def exitVehicle(self):
         self.vehicle = None
+        self.visible = True
         speed = np.linalg.norm(self.vel)
         if speed>3:
             self.state = "tumbling"
@@ -641,7 +687,7 @@ class Bomb(Entity):
         self.stateTimer = 0
         self.friction = 0.9
         self.health = 2
-
+        self.size = 8
         self.fuse_time = 200
 
         self.image = self.idleImage
@@ -821,7 +867,7 @@ class Box(Entity):
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Box.idleImage
-        self.size = 8
+        self.size = 20
         self.health = 3
         self.friction = 0.9
 
@@ -841,7 +887,7 @@ class Bush(Entity):
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Bush.idleImage
-        self.size = 8
+        self.size = 15
         self.health = 2
         self.friction = 0.9
 
@@ -937,7 +983,7 @@ class Worm(Enemy):
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Worm.idleImages[0]
-        self.size = 12
+        self.size = 13
         self.health = 5
         self.max_health = 5
 
@@ -1118,7 +1164,7 @@ class Vehicle(Entity):
 
 
         # move
-        self.pos+=self.vel
+        
 
         # friction
         #self.vel=self.friction*self.vel
@@ -1134,7 +1180,12 @@ class Vehicle(Entity):
             remainder= self.vel*speedRemainder/tot
             self.vel=traction+remainder
             """
+        
+        self.pos+=self.vel
 
+        if(world.tileCollision(self.pos,self.size)):
+            self.pos-=self.vel
+            self.vel = -0.1 * self.vel
         for i in world.entities: #collidibles ?
             if i != self:
                 if np.linalg.norm(self.pos - i.pos)<self.size + i.size:
