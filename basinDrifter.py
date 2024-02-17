@@ -473,6 +473,8 @@ class Player(Entity):
                 self.vel *= 0.99
                 self.image = Player.sidleImage
                 self.angle = random.random()*np.pi*2
+                if np.linalg.norm(self.vel)<2:
+                    self.state = "walking"
             elif self.state == "walking":
 
                 self.image = Player.idleImage
@@ -587,7 +589,8 @@ class Player(Entity):
                     print("you hit a shot at ",entity)
                     entity.hurt(5)
                     distance_to_player = np.linalg.norm(relative_projected_point)
-                    entity.vel += relative_projected_point/distance_to_player * 10#00 / (distance_to_player+10)
+                    if distance_to_player>0:
+                        entity.vel += relative_projected_point/(distance_to_player) * 10#00 / (distance_to_player+10)
 
 
     def eatClosest(self):
