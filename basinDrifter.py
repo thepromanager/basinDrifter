@@ -428,8 +428,9 @@ class Entity():
         self.pos += self.vel
     def draw(self): 
         #print("in entity:", self, self.image)
+        pygame.draw.circle(gameDisplay,(255,0,0),world.camera.get_screen_pos(self.pos),self.size)
         world.camera.blitImage(gameDisplay, self.image, self.pos, (self.imageSize//2,self.imageSize//2), self.angle)
-        pygame.draw.circle(gameDisplay,(255,0,0,0),world.camera.get_screen_pos(self.pos),self.size)
+        
         
     def hurt(self, damage):
         if damage >= self.health:
@@ -462,8 +463,8 @@ class Player(Entity):
         self.health = 20
         self.max_health = 20
         self.gun = True
-        self.ammo = 1
-        self.bombs = 0
+        self.ammo = 5
+        self.bombs = 5
 
     def update(self):
         pressed = pygame.key.get_pressed()
@@ -665,7 +666,7 @@ class Bomb(Entity):
         self.stateTimer = 0
         self.friction = 0.9
         self.health = 2
-
+        self.size = 8
         self.fuse_time = 200
 
         self.image = self.idleImage
@@ -784,7 +785,7 @@ class Box(Entity):
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Box.idleImage
-        self.size = 8
+        self.size = 20
         self.health = 3
         self.friction = 0.9
 
@@ -804,7 +805,7 @@ class Bush(Entity):
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Bush.idleImage
-        self.size = 8
+        self.size = 15
         self.health = 2
         self.friction = 0.9
 
@@ -900,7 +901,7 @@ class Worm(Enemy):
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.image = Worm.idleImages[0]
-        self.size = 12
+        self.size = 13
         self.health = 5
         self.max_health = 5
 
