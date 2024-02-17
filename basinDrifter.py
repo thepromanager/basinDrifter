@@ -107,6 +107,22 @@ class UI():
         for i in range(game.player.bombs):
             gameDisplay.blit(cls.bombImage, (-10+ 10*i,screenHeight-150))
 
+        # HEALTH
+        bar_width = 500
+        bar_height = 10
+        health_color = (200,0,0)
+        empty_color = (20,0,0)
+        pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height, bar_width, bar_height), 0)
+        pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*world.player.health/world.player.max_health, bar_height), 0)
+
+        if world.player.vehicle:
+            bar_width = 200
+            bar_height = 5
+            health_color = (100,100,0)
+            empty_color = (10,10,0)
+            pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, 30, bar_width, bar_height), 0)
+            pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, 30, bar_width*world.player.vehicle.fuel/world.player.vehicle.maxfuel, bar_height), 0)
+
 
 
 class World():
@@ -119,6 +135,7 @@ class World():
         self.player=None
         self.chunks = []#[[Chunk(random.randint(1,100000),np.array([i,j])) for i in range(self.worldsize)] for j in range(self.worldsize)]
         self.entities = []
+        self.effects = []
         self.camera = Camera()
         self.size = 1300.0
         self.centerChunk = None
@@ -211,6 +228,8 @@ class World():
         self.player.update()
         for entity in self.entities:
             entity.update()
+        for effect in self.effects:
+            effect.update()
 
         self.camera.update()
     def draw(self):
@@ -222,6 +241,8 @@ class World():
             chunk.draw()
         for entity in self.entities:
             entity.draw()
+        for effect in self.effects:
+            effect.draw()
         self.player.draw()
         UI.draw(self)
     def setInbounds(self,pos):
@@ -374,6 +395,8 @@ class Chunk():
 
 
 class Entity():
+    imageSize = gridSize
+    
     def __init__(self, pos,origin):
         self.origin=origin
         self.pos = pos
@@ -381,7 +404,6 @@ class Entity():
         self.vel = np.array([0.0,0.0])
         self.size = 16 
         self.image = None
-        self.imageSize = gridSize
         self.health = 10
     def update(self):
         self.pos += self.vel
@@ -421,6 +443,7 @@ class Player(Entity):
         self.gun = True
         self.ammo = 1
         self.bombs = 0
+        self.fuelDunks = 0
 
     def update(self):
         pressed = pygame.key.get_pressed()
@@ -447,6 +470,9 @@ class Player(Entity):
                 elif(pressed[pygame.K_q] and not self.qDown):
                     self.qDown = True
                     self.throwBomb()
+                elif(pressed[pygame.K_f] and not self.fDown):
+                    self.fDown = True
+                    self.refuelVehicle()
                 #shooting logic
                 elif pygame.mouse.get_pressed()[0] and self.state == "walking" and self.gun == True:
                     self.shoot()
@@ -483,6 +509,8 @@ class Player(Entity):
             self.shiftDown = False
         if(not pressed[pygame.K_q]):
             self.qDown = False
+        if(not pressed[pygame.K_f]):
+            self.fDown = False
 
 
         playerChunk = world.getChunk(self.pos)
@@ -551,36 +579,39 @@ class Player(Entity):
 
 
     def eatClosest(self):
-        bestDist = 50
-        bestFood = None
-        for entity in world.entities:
-            if(isinstance(entity, Enemy)):
-                dist = np.linalg.norm(entity.pos - self.pos)
-                if dist < bestDist:
-                    bestDist = dist
-                    bestFood = entity
-
-        # enter
+        bestFood = self.findClosestEntity(condition = lambda x:isinstance(x, Enemy))
+        # eat
         if bestFood:
             eatingspeed=0.05
-            self.health=min(self.max_health,self.health+eatingspeed)
+            self.health=min(self.max_health,self.health+eatingspeed) # 100% lifesteaL!!?
             bestFood.hurt(eatingspeed)
-    def enterClosestVehicle(self):#, vehicle):
-        # find closest enemy to eat
-        bestDist = 50
-        bestVehicle = None
+
+
+
+    def findClosestEntity(self, maxdist = 50, condition=None):
+
+        # find closest vehicle to enter
+        bestDist = maxdist
+        bestObject = None
         for entity in world.entities:
-            if(isinstance(entity, Vehicle)):
+            if(condition and condition(entity)):
                 dist = np.linalg.norm(entity.pos - self.pos)
                 if dist < bestDist:
                     bestDist = dist
-                    bestVehicle = entity
+                    bestObject = entity
+        return bestObject
 
+    def refuelVehicle(self):
+        if self.fuelDunks>0:
+            bestVehicle = self.findClosestEntity(condition = lambda x:isinstance(x,Vehicle))
+            bestVehicle.fuel = min(bestVehicle.maxfuel, bestVehicle.fuel + 1000)
+
+    def enterClosestVehicle(self):
         # enter
+        bestVehicle = self.findClosestEntity(condition = lambda x:isinstance(x,Vehicle))
         if bestVehicle:
             self.state = "driving"
             self.vehicle = bestVehicle
-
     def exitVehicle(self):
         self.vehicle = None
         speed = np.linalg.norm(self.vel)
@@ -598,20 +629,10 @@ class Player(Entity):
             pass#pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height*3, bar_width, bar_height), 0)
             #pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/max_health, bar_height), 0)
 
-        bar_width = 500
-        bar_height = 10
-        health_color = (200,0,0)
-        empty_color = (20,0,0)
-        pygame.draw.rect(gameDisplay, empty_color, (screenWidth//2-bar_width//2, bar_height, bar_width, bar_height), 0)
-        pygame.draw.rect(gameDisplay, health_color, (screenWidth//2-bar_width//2, bar_height, bar_width*self.health/self.max_health, bar_height), 0)
-
 class Bomb(Entity):
     
     idleImage = loadImage("things/bomb/bomb.png")
     fuseImages = [loadImage("things/bomb/livebomb1.png"), loadImage("things/bomb/livebomb2.png")]
-    explosion1 = loadImage("effects/newexplosion1.png",size=gridSize*2)
-    explosion2 = loadImage("effects/newexplosion2.png",size=gridSize*2)
-    explosion3 = loadImage("effects/bigexplosion2.png",size=gridSize*2)
 
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0)) #"what is this hack!??"
@@ -643,37 +664,19 @@ class Bomb(Entity):
             self.image = self.fuseImages[(self.stateTimer//10)%2]
             if self.stateTimer >= self.fuse_time+random.randint(1,100):
                 self.explode()
-
-        elif self.state == "smoke":
-            #print("old age:", self.stateTimer)
-            self.imageSize = gridSize*2
-            self.vel *= 0
-            if self.stateTimer<6:
-                self.image = self.explosion1
-            elif self.stateTimer<12:
-                self.image = self.explosion2
-            else:
-                self.image = self.explosion3
-            if self.stateTimer > 20:
-                world.entities.remove(self)
-
         else:
             print(self.state)
 
     def die(self):
-        if self.state != "smoke":
-            print("i die -> explode")
-            self.state = "fusing"
-            self.stateTimer = self.fuse_time
-        else:
-            print("i die -> already smoke")
-
-    def draw(self):
-        print(self.image,self.stateTimer,self.fuse_time,self.state)
-        super().draw()
+        print("i die -> explode")
+        self.state = "fusing"
+        self.stateTimer = self.fuse_time
 
     def explode(self):
-        self.state = "smoke"
+        if self in world.entities:
+            world.entities.remove(self)
+        else:
+            print("redundant removes?!? ( + redundant bomb explosions!!? )")
         self.stateTimer = 0
 
         blast_radius = 100
@@ -684,9 +687,88 @@ class Bomb(Entity):
 
             if hyp < blast_radius:
                 if hyp:
-                    entity.vel = dPos/hyp * 10
+                    entity.vel = dPos/(hyp+1) * 10
                 entity.hurt(10)
+        world.effects.append(Explosion(self.pos))
+class Fuel(Entity):
+    
+    idleImage = loadImage("things/fuel.png")
+
+    def __init__(self, pos):
+        super().__init__(pos,(None,(0,0),0)) #"what is this hack!??"
+        self.pos = pos*1
+        self.state = "idle"
+        #self.stateTimer = 0
+        self.friction = 0.86
+        self.health = 4
+        self.timesExploded = 0 # for  debugging why everything explodes so many times
+
+        self.image = self.idleImage
+
+    def update(self):
+        #self.stateTimer += 1
+        self.pos += self.vel
+        self.vel *= self.friction
+
+        if self.state == "idle":
+            self.image = self.idleImage
+            player_dist = np.linalg.norm(self.pos - world.player.pos)
+            
+            # pickup
+            if player_dist < 20 and world.player.state == "walking":
+                world.entities.remove(self)
+                world.player.fuelDunks += 1
+        else:
+            print(" !!! unknown state in Fuel object:", self.state)
+
+    def die(self):
+        print("fuel object dies -> explode")
+        self.explode()
+
+    def explode(self):
+        self.timesExploded += 1
+        if self.timesExploded >1:
+            print("WTF",self.timesExploded,"TIMES EXPLODED")
+        world.entities.remove(self)
+        self.stateTimer = 0
+
+        blast_radius = 100
+
+        for entity in world.entities+[world.player]:
+            dPos = entity.pos - self.pos
+            hyp = np.linalg.norm(dPos)
+
+            if hyp < blast_radius:
+                if hyp:
+                    entity.vel = dPos/(hyp+1) * 5
+                entity.hurt(8)
+        world.effects.append(Explosion(self.pos))
+
+class Explosion():
+    imageSize = 128
+
+    explosion1 = loadImage("effects/newexplosion1.png",size=imageSize)
+    explosion2 = loadImage("effects/newexplosion2.png",size=imageSize)
+    explosion3 = loadImage("effects/bigexplosion2.png",size=imageSize)
+    def __init__(self, pos):
+        self.stateTimer = 0
+        self.pos = pos
         self.image = self.explosion1
+
+    def update(self):
+        if self.stateTimer<6:
+            self.image = self.explosion1
+        elif self.stateTimer<12:
+            self.image = self.explosion2
+        else:
+            self.image = self.explosion3
+        if self.stateTimer > 20:
+            world.effects.remove(self)
+        self.stateTimer += 1
+
+    def draw(self): 
+        #print("in entity:", self, self.image)
+        world.camera.blitImage(gameDisplay, self.image, self.pos, (self.imageSize//2,self.imageSize//2), random.random())
 class Bullet(Entity):
     imageSize = 32
     idleImage = loadImage("UI/bullet.png", imageSize)
@@ -750,7 +832,7 @@ class Box(Entity):
     def die(self):
         super().die()
         for i in range(random.randint(1,5)):
-            loot = random.choice([Bomb,Bullet,Bullet])(self.pos)
+            loot = random.choice([Bomb,Bullet,Bullet, Fuel])(self.pos)
             loot.vel = np.array([random.uniform(-2,2),random.uniform(-2,2)])
             world.entities.append(loot)
 
@@ -1027,6 +1109,7 @@ class Vehicle(Entity):
         self.image = None
 
         self.fuel = 2000
+        self.maxfuel = 2000
 
     def direction(self,shift=0):
         return np.array([np.cos(self.angle+shift),np.sin(self.angle+shift)])
