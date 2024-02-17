@@ -5,6 +5,8 @@ import os
 import math
 import numpy as np
 import noise
+from PIL import Image
+
 
 # tiles
 # health bar
@@ -144,6 +146,7 @@ class World():
         self.centerChunk = None
         self.loadedChunks = []
         self.toBeKilled = [] # what is this ? ?!???
+
         #self.surf = pygame.Surface((self.groundSize*4,self.groundSize*4)).convert_alpha()
         #for x in [0,1,2,3]:
         #    for y in [0,1,2,3]:
@@ -188,8 +191,9 @@ class World():
         West=np.array([-1,0])
         
         for i in range(30):
-            startpoint = np.array([7,7])
+            startpoint = np.array([random.randint(3,self.chunksize-4),random.randint(3,self.chunksize-4)])
             pos = [random.randint(0,self.worldsize-1),random.randint(0,self.worldsize-1)]
+            self.chunks[pos[1]][pos[0]].ends+=1
             moving = random.choice([North,West,East,South])
             for i in range(random.randint(80,100)):
                 if(random.random()>0.7):
@@ -203,6 +207,7 @@ class World():
                 self.chunks[pos[1]][pos[0]].roads.append([startpoint,endpoint])
                 startpoint = endpoint-moving*(self.chunksize-1)
                 pos = pos+moving
+            self.chunks[pos[1]][pos[0]].ends+=1
     def loadChunks(self):
         x=self.centerChunk.gridpos[1]
         y=self.centerChunk.gridpos[0]
@@ -304,6 +309,9 @@ class Chunk():
         else:
             self.image = self.sandImage
         self.roads=[]
+        #to determine which tiles to make interesting
+        self.ends = 0
+
         #self.toBeKilled = []  # remove this? /b
     def generateTiles(self):
         random.seed(self.seed)
@@ -333,8 +341,26 @@ class Chunk():
         
         for road in self.roads:
             self.makeRoad(road[0],road[1])
-        self.visited=True
+        if(self.ends>0):
+            img = Image.open("assets/textures/blueprints/structure_groove.png")
+            img.load()
+            data = np.asarray( img, dtype="int32" )
+            if(random.random()<0.5):
+                data = np.fliplr(data)
+            for i in range(random.randint(0,3)):
+                data = np.rot90(data)
+            for x in range(world.chunksize):
+                for y in range(world.chunksize):
+                    color = data[x][y]
+                    if(np.array_equal(color,np.array([0,0,0,255]))):
+                        print("black")
+                        self.tiles[y][x]=201
+                    if(np.array_equal(color,np.array([255,0,0,255]))):
+                        print("red")
+                        if(random.random()<0.5):
+                            self.tiles[y][x]=1
 
+        self.visited=True
     def makeRoad(self,start,end):
         roadsize=3
         for x in range(World.chunksize): #scipy.sparse find? onödig optimisering
