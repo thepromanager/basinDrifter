@@ -534,7 +534,7 @@ class Player(Entity):
         if self.vehicle==None:
             self.stateTimer += 1
             if self.state == "tumbling":
-                self.health -= np.linalg.norm(self.vel)*0.01
+                self.health = max(0, np.linalg.norm(self.vel)*0.01)
                 self.vel *= 0.99
                 self.image = Player.sidleImage
                 self.angle = random.random()*np.pi*2
