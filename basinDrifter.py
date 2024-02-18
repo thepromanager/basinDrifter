@@ -512,12 +512,15 @@ class Player(Entity):
     shoot2Image = loadImage("player/shooting2.png")
     eat1Image = loadImage("player/eating.png")
     eat2Image = loadImage("player/eating2.png")
+    punchImage = loadImage("player/punch.png")
+    punch2Image = loadImage("player/punch2.png")
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0)) # what is this hack!?
         self.speed = 0.2
         self.image = Player.idleImage
         self.vehicle = None
         self.state = "walking"
+        self.stateTimer = 0
         self.health = 20
         self.max_health = 20
         self.gun = True
@@ -528,6 +531,7 @@ class Player(Entity):
     def update(self):
         pressed = pygame.key.get_pressed()
         if self.vehicle==None:
+            self.stateTimer += 1
             if self.state == "tumbling":
                 self.health -= np.linalg.norm(self.vel)*0.01
                 self.vel *= 0.99
@@ -542,8 +546,10 @@ class Player(Entity):
 
                 
                 if(pressed[pygame.K_e]):
-                    self.state="eating"
-                    self.stateTimer=0
+                    self.state = "eating"
+                    self.stateTimer = 0
+                elif(pressed[pygame.K_SPACE] and not self.shiftDown):
+                    self.punch()
                 elif(pressed[pygame.K_LSHIFT] and not self.shiftDown):
                     self.shiftDown = True
                     self.enterClosestVehicle()
@@ -558,7 +564,6 @@ class Player(Entity):
                     self.shoot()
 
             elif self.state == "eating":
-                self.stateTimer+=1
                 self.image = [Player.eat1Image,Player.eat2Image][(self.stateTimer//20)%2]
                 self.vel *= 0.8
                 if(self.stateTimer>10):
@@ -568,9 +573,34 @@ class Player(Entity):
 
             elif self.state == "shooting":
                 self.image = Player.shoot1Image
-                self.stateTimer += 1
                 if self.stateTimer > 20:
                     self.state = "walking"
+
+            elif self.state == "punching":
+                
+                if self.stateTimer==10:
+                    facingOffset = np.array([np.cos(self.angle),np.sin(self.angle)])
+                    self.vel = facingOffset * 2
+                    for entity in world.entities:
+                        dist = np.linalg.norm(entity.pos - (self.pos+facingOffset*20) )
+                        if dist<20+entity.size:
+                            entity.hurt(2)
+                            entity.vel += facingOffset * 4
+                            print("punched a ",entity)
+                            #self.hurt(0.1)
+                if self.stateTimer < 10:
+                    self.image = self.punchImage
+                elif self.stateTimer<30:
+                    self.image = self.punch2Image
+                    self.vel *= 0.8
+
+                elif self.stateTimer<40:
+                    self.image = self.punchImage
+                else:
+                    self.state = "walking"
+
+            else:
+                print("UNKNOWN PLAYER STATE: ", self.state)
 
             self.pos += self.vel
         else:
@@ -657,18 +687,24 @@ class Player(Entity):
                     if distance_to_player>0:
                         entity.vel += relative_projected_point/(distance_to_player) * 10#00 / (distance_to_player+10)
 
+    def punch(self):
+        self.state = "punching"
+        self.stateTimer = 0
+        #self.angle = np.arctan2(relative_mouse_y, relative_mouse_x)
+        
 
     def eatClosest(self):
         bestFood = world.getTarget(self.pos,distance=50,condition=lambda x:isinstance(x,Enemy),closest=True)
         # eat
         if bestFood:
-            eatingspeed=0.05
+            eatingspeed=0.02
             self.health=min(self.max_health,self.health+eatingspeed) # 100% lifesteaL!!?
             bestFood.hurt(eatingspeed)
     def refuelVehicle(self):
         if self.fuelDunks>0:
             bestVehicle = world.getTarget(self.pos,distance=50,condition=lambda x:isinstance(x,Vehicle),closest=True)
             bestVehicle.fuel = min(bestVehicle.maxfuel, bestVehicle.fuel + 1000)
+            self.fuelDunks -= 1
 
     def enterClosestVehicle(self):
         # enter
@@ -706,7 +742,7 @@ class Bomb(Entity):
         self.state = "idle"
         self.stateTimer = 0
         self.friction = 0.9
-        self.health = 2
+        self.health = 3
         self.size = 8
         self.fuse_time = 200
 
@@ -788,14 +824,17 @@ class Fuel(Entity):
             print(" !!! unknown state in Fuel object:", self.state)
 
     def die(self):
-        print("fuel object dies -> explode")
+        #print("fuel object dies -> explode")
         self.explode()
 
     def explode(self):
         self.timesExploded += 1
         if self.timesExploded >1:
             print("WTF",self.timesExploded,"TIMES EXPLODED")
-        world.entities.remove(self)
+        if self in world.entities:
+            world.entities.remove(self)
+        else:
+            print("unnecessary removes of fuel object")
         self.stateTimer = 0
 
         blast_radius = 100
@@ -936,14 +975,14 @@ class Beetle(Enemy):
         self.vel = direction/np.linalg.norm(direction)
         self.angle = np.arctan2(direction[1], direction[0])
         """
-        if self.health < 4:
+        if self.health < self.max_health*0.5:
             self.state = "dead"
             self.image = Beetle.deadImage
 
         if self.state == 0:
 
             self.angle += random.random()*0.2 - 0.1
-            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/self.max_health) * 0.2
+            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/(self.max_health/2)-1) * 0.2
             self.vel *= 0.9
             self.image = Beetle.idleImages[random.randint(0,1)]
 
@@ -970,7 +1009,7 @@ class Beetle(Enemy):
                     self.stateTimer = 0
                 else:
                     if hyp>0:
-                        self.vel += dPos/hyp * (self.health/self.max_health) * 0.4
+                        self.vel += dPos/hyp * (self.health/(self.max_health/2)-1) * 0.4
                     self.vel *= 0.9
                     self.angle = np.arctan2(self.vel[1],self.vel[0])
                     self.image = Beetle.idleImages[random.randint(0,1)]
