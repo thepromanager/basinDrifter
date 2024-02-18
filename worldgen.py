@@ -28,12 +28,12 @@ for x in range(world.worldsize):
 		if(c.chunktype%2!=0):
 			gameDisplay.blit(sandImage,(x*factor,y*factor,factor,factor))
 			#pygame.draw.rect(gameDisplay,(255,255,255),(x*factor,y*factor,factor,factor))
-		if(len(c.roads)>1):
-			pygame.draw.rect(gameDisplay,(0,255,255),(x*factor,y*factor,factor,factor))
+		#if(len(c.roads)>1):
+		#	pygame.draw.rect(gameDisplay,(0,255,255),(x*factor,y*factor,factor,factor))
 
 		
 		if(c.ends>0):
-			pygame.draw.rect(gameDisplay,(c.ends*200%255,c.ends*100%255,0),(x*factor,y*factor,factor,factor))
+			pygame.draw.rect(gameDisplay,(255,0,0),(x*factor,y*factor,factor,factor))
 		for [startpoint,endpoint] in c.roads:
 			pygame.draw.line(gameDisplay,(0,0,0),factor*np.array([x,y])+startpoint//2,factor*np.array([x,y])+endpoint//2,2)
 

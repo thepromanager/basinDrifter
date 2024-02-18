@@ -168,16 +168,26 @@ class World():
         #for x in [0,1,2,3]:
         #    for y in [0,1,2,3]:
         #        self.surf.blit(self.groundImage,np.array([x*self.groundSize,y*self.groundSize]))
-    def getTarget(self,pos,distance=None,condition=lambda x:True,includePlayer=True,extraPlayerChance=0):
+    def getTarget(self,pos,distance=None,condition=lambda x:True,includePlayer=True,extraPlayerChance=0,closest=False):
         targets=self.entities+[world.player]*includePlayer
         #filter according to range
         targets = filter(lambda x:np.linalg.norm(x.pos-pos)<distance,targets)
         targets = filter(lambda x:x.visible,targets)
         targets = filter(condition,targets)
-        target = random.choice(targets)
+        target = None
+        if(targets):
+            if(closest):
+                bestDist = distance
+                for possible in targets:
+                    dist = np.linalg.norm(possible.pos - pos)
+                    if dist < bestDist:
+                        bestDist = dist
+                        target = possible
+            else:
+                target = random.choice(targets)
+
         if(random.random()<extraPlayerChance and world.player.visible):
             target = world.player
-
         return target
     def generateWorld(self):
         SEED = random.random()*100
@@ -684,37 +694,21 @@ class Player(Entity):
         
 
     def eatClosest(self):
-        bestFood = self.findClosestEntity(condition = lambda x:isinstance(x, Enemy))
+        bestFood = world.getTarget(self.pos,distance=50,condition=lambda x:isinstance(x,Enemy),closest=True)
         # eat
         if bestFood:
             eatingspeed=0.02
             self.health=min(self.max_health,self.health+eatingspeed) # 100% lifesteaL!!?
             bestFood.hurt(eatingspeed)
-
-
-
-    def findClosestEntity(self, maxdist = 50, condition=None):
-
-        # find closest vehicle to enter
-        bestDist = maxdist
-        bestObject = None
-        for entity in world.entities:
-            if(condition and condition(entity)):
-                dist = np.linalg.norm(entity.pos - self.pos)
-                if dist < bestDist:
-                    bestDist = dist
-                    bestObject = entity
-        return bestObject
-
     def refuelVehicle(self):
         if self.fuelDunks>0:
-            bestVehicle = self.findClosestEntity(condition = lambda x:isinstance(x,Vehicle))
+            bestVehicle = world.getTarget(self.pos,distance=50,condition=lambda x:isinstance(x,Vehicle),closest=True)
             bestVehicle.fuel = min(bestVehicle.maxfuel, bestVehicle.fuel + 1000)
             self.fuelDunks -= 1
 
     def enterClosestVehicle(self):
         # enter
-        bestVehicle = self.findClosestEntity(condition = lambda x:isinstance(x,Vehicle))
+        bestVehicle = world.getTarget(self.pos,distance=50,condition=lambda x:isinstance(x,Vehicle),closest=True)
         if bestVehicle:
             self.visible=False
             self.state = "driving"
@@ -918,8 +912,12 @@ class Enemy(Entity): # or creature rather
 
     def update(self):
         self.move()
-        self.pos += self.vel
         self.vel *= self.friction
+        self.pos += self.vel
+        if(world.tileCollision(self.pos,self.size)):
+            self.pos-=self.vel
+            self.vel = -0.1 * self.vel
+        
 
         # inbounds
         #self.pos=world.setInbounds(self.pos)
