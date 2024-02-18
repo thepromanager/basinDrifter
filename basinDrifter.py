@@ -173,7 +173,7 @@ class World():
         #filter according to range
         targets = filter(lambda x:np.linalg.norm(x.pos-pos)<distance,targets)
         targets = filter(lambda x:x.visible,targets)
-        targets = filter(condition,targets)
+        targets = list(filter(condition,targets))
         target = None
         if(targets):
             if(closest):
@@ -184,6 +184,7 @@ class World():
                         bestDist = dist
                         target = possible
             else:
+                print(targets)
                 target = random.choice(targets)
 
         if(random.random()<extraPlayerChance and world.player.visible):
@@ -440,8 +441,8 @@ class Chunk():
                     world.entities.append(Bush(pos,origin))
                 elif(tile==6): #Beetle
                     world.entities.append(Worm(pos,origin))
-                elif(tile==7): #Dragonfly
-                    world.entities.append(Dragonfly(pos,origin))
+                #elif(tile==7): #Dragonfly
+                #    world.entities.append(Dragonfly(pos,origin))
 
                 if(tile<100): #tile numbers under 100 are entities, over 100 are other types of tiles
                     self.tiles[x][y]=0
@@ -907,11 +908,21 @@ class Enemy(Entity): # or creature rather
         super().__init__(pos,origin)
         self.vehicle = None # wut?
         self.friction = 0.9
-        self.state = 0
+        self.state = "happy" #Happy, approaching, searching_food
         self.stateTimer = 0
+        self.target = None
+        self.mood = "happy"
+        self.senseRange = 500
+        self.attackRange = 40
+        self.speed = 0.2
 
     def update(self):
-        self.move()
+        if self.health < self.max_health/2:
+            self.state = "dead"
+            self.image = self.deadImage
+        #random check modd
+        #self.checkMood()
+        self.stateMachine()
         self.vel *= self.friction
         self.pos += self.vel
         if(world.tileCollision(self.pos,self.size)):
@@ -922,8 +933,90 @@ class Enemy(Entity): # or creature rather
         # inbounds
         #self.pos=world.setInbounds(self.pos)
 
+    def stateMachine(self):
+        self.stateTimer += 1
+        if(self.state=="happy"):
+            self.move()
+            self.forcedMoodBehaviour()
+        elif(self.state=="searching_food"):
+            self.move() # move randomly
+            self.forcedMoodBehaviour()
+        elif(self.state=="approaching"):
+            if not self.target in world.entities+[world.player]: # more general maybe?
+                self.target = None
+                self.forcedMoodBehaviour()
+            else:
+                hyp = np.linalg.norm(self.target.pos - self.pos)
+                if hyp < self.attackRange:
+                    self.state = "attacking"
+                    self.stateTimer = 0
+                else:
+                    self.move()
+                    if hyp>self.senseRange:
+                        self.target = None
+                        self.forcedMoodBehaviour()
+            self.moodBehaviour()
+        elif(self.state=="attacking"):
+            self.attack()
+
+
+        #elif(self.state=="searching"):
+    def forcedMoodBehaviour(self):
+        newMood=self.checkMood()
+        self.mood = newMood
+        if(self.mood=="scared"):
+            self.scaredBehaviour()
+        elif(self.mood=="hungry"):
+            self.hungryBehaviour()
+        elif(self.mood=="happy"):
+            self.happyBehaviour()
+    def moodBehaviour(self):
+        mood=self.mood
+        newMood=self.checkMood()
+        if(not mood==newMood):
+            self.forcedMoodBehaviour()            
+    def scaredBehaviour(self):
+        self.state="scared" #should flee instead
+    def happyBehaviour(self):
+        self.state="happy"   
+    def findFood(self):
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0.5)
+    def hungryBehaviour(self):
+        self.target = self.findFood()
+        if self.target:
+            if not self.target == self:
+                self.state = "approaching"
+                self.stateTimer = 0
+            else:
+                target=None
+        else: 
+            self.state = "searching_food"        
+    def checkMood(self):
+        mood="happy"
+        if(self.health<self.max_health*0.9):
+            mood="hungry"
+        # Add Afraid
+        return mood
+    def moveToTarget(self):
+        dPos=self.target.pos - self.pos
+        hyp=np.linalg.norm(dPos)
+        if hyp>0:
+            self.vel += dPos/hyp * (self.health/(self.max_health/2)-1) * 0.4
+        self.vel *= 0.9
+        self.angle = np.arctan2(self.vel[1],self.vel[0])        
     def move(self):
-        pass
+        if self.state=="happy":
+            self.happyMove()
+        if self.state=="searching_food":
+            self.happyMove()
+        if self.state=="approaching":
+            self.moveToTarget()
+    def happyMove(self):
+        self.angle += random.random()*0.2 - 0.1
+        self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/(self.max_health/2)-1) * self.speed
+        self.vel *= 0.9
+
+
         
 class Box(Entity):
     idleImage = loadImage("things/box.png")
@@ -968,76 +1061,24 @@ class Beetle(Enemy):
         self.size = 16
         self.health = 12
         self.max_health = self.health
-
     def move(self):
-        """
-        direction = world.player.pos - self.pos
-        self.vel = direction/np.linalg.norm(direction)
-        self.angle = np.arctan2(direction[1], direction[0])
-        """
-        if self.health < self.max_health*0.5:
-            self.state = "dead"
-            self.image = Beetle.deadImage
-
-        if self.state == 0:
-
-            self.angle += random.random()*0.2 - 0.1
-            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/(self.max_health/2)-1) * 0.2
-            self.vel *= 0.9
-            self.image = Beetle.idleImages[random.randint(0,1)]
-
-            if random.random()<0.02:
-                self.target = random.choice(world.entities)
-                if random.random()<0.5:
-                    self.target = (world.player)
-                if not self.target == self:
-                    dPos = self.target.pos - self.pos
-                    hyp = np.linalg.norm(dPos)
-                    if hyp<300:
-                        self.state = 1 # attack
-                        self.stateTimer = 0
-
-        elif self.state == 1:
-            if not self.target in world.entities+[world.player]:
-                self.state = 0
-                self.target = None
-            else:
-                dPos = self.target.pos - self.pos
-                hyp = np.linalg.norm(dPos)
+        super().move()
+        self.image = Beetle.idleImages[random.randint(0,1)]
+    def attack(self):
+        if self.stateTimer < 20: # prebite
+            # face correctly
+            self.moveToTarget()
+            self.image = self.biteImages[0]
+        elif self.stateTimer == 20: # bite
+            if self.target:
+                hyp = np.linalg.norm(self.target.pos - self.pos)
                 if hyp < 40:
-                    self.state = 2
-                    self.stateTimer = 0
-                else:
-                    if hyp>0:
-                        self.vel += dPos/hyp * (self.health/(self.max_health/2)-1) * 0.4
-                    self.vel *= 0.9
-                    self.angle = np.arctan2(self.vel[1],self.vel[0])
-                    self.image = Beetle.idleImages[random.randint(0,1)]
-                    if hyp>300:
-                        self.state = 0
-
-        elif self.state == 2:
-            self.stateTimer += 1
-
-            if self.stateTimer < 20: # prebite
-                self.image = self.biteImages[0]
-                # face correctly
-                dPos = self.target.pos - self.pos
-                hyp = np.linalg.norm(dPos)
-                if hyp>0:
-                    self.vel += dPos/hyp * (self.health/self.max_health) * 0.4
-                self.vel *= 0.9
-                self.angle = np.arctan2(self.vel[1],self.vel[0])
-            elif self.stateTimer == 20: # bite
-                if self.target:
-                    dPos = self.target.pos - self.pos
-                    hyp = np.linalg.norm(dPos)
-                    if hyp < 40:
-                        self.target.hurt(4)
-            elif self.stateTimer < 60: # ending lag
-                self.image = self.biteImages[1]
-            else:
-                self.state = 1
+                    self.target.hurt(4)
+                    # add hunger
+        elif self.stateTimer < 60: # ending lag
+            self.image = self.biteImages[1]
+        else:
+            self.state = "approaching"
 class Worm(Enemy):
     idleImages = [loadImage("things/worm/worm.png"),loadImage("things/worm/worm2.png")]
     biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
@@ -1049,66 +1090,33 @@ class Worm(Enemy):
         self.size = 13
         self.health = 5
         self.max_health = 5
-
-    def move(self):
-
-
-        if self.health < 4:
-            self.state = "dead"
-            self.image = self.deadImage
-
-
-        self.stateTimer += 1
-        if self.state == 0:
-
-            self.angle += random.random()*0.2 - 0.1
-            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/self.max_health) * 0.1
-            self.vel *= 0.9
-            self.image = Worm.idleImages[self.stateTimer%32 < 16]
-
-            if random.random()<0.03:
-                self.target = random.choice(world.entities+[world.player])
-                if not self.target == self:
-                    dPos = self.target.pos - self.pos
-                    hyp = np.linalg.norm(dPos)
-                    if hyp<400:
-                        self.state = 1 # attack
-                        self.stateTimer = 0
-
-        elif self.state == 1:
-            if not self.target in world.entities:
-                self.state = 0
+        self.speed = 0.1
+        self.senseRange = 400
+    def findFood(self):
+        return world.getTarget(pos,distance=self.senseRange,includePlayer=True)
+    def happyMove(self):
+        super().happyMove()
+        self.image = Worm.idleImages[self.stateTimer%32 < 16]
+    def moveToTarget(self):
+        super().happyMove()
+        self.image = Worm.idleImages[self.stateTimer%16 < 8]
+    def attack(self):
+        if self.stateTimer < 10:
+            self.image = self.biteImages[0]
+        elif self.stateTimer == 10:
+            if self.target:
+                self.target.hurt(2)
+        elif self.stateTimer < 45:
+            self.image = self.biteImages[1]
+        else:
+            if random.random()<0.5:
                 self.target = None
+                self.forcedMoodBehaviour()
             else:
-                dPos = self.target.pos - self.pos
-                hyp = np.linalg.norm(dPos)
-                if hyp < 50:
-                    self.state = 2
-                    self.stateTimer = 0
-                else:
-                    if hyp>0:
-                        self.vel += dPos/hyp * (self.health/self.max_health) * 0.3
-                    self.vel *= 0.9
-                    self.angle = np.arctan2(self.vel[1],self.vel[0])
-                    self.image = Worm.idleImages[self.stateTimer%16 < 8]
-                    if hyp>500:
-                        self.state = 0
-
-        elif self.state == 2:
-
-            if self.stateTimer < 10:
-                self.image = self.biteImages[0]
-            elif self.stateTimer == 10:
-                if self.target:
-                    self.target.hurt(2)
-            elif self.stateTimer < 45:
-                self.image = self.biteImages[1]
-            else:
-                if random.random()<0.5:
-                    self.target = None
-                self.state = 1
+                self.state = "approaching"
 class Dragonfly(Enemy):
     idleImages = [loadImage("things/dragonfly/dragonfly.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyL.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyLR.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyR.png",size=gridSize*2)]
+    deadImage = loadImage("things/worm/dead.png")
     #biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
@@ -1120,6 +1128,62 @@ class Dragonfly(Enemy):
         self.grabbed = None
         self.nest = pos*1
         self.target = None
+        self.senseRange = 800
+        self.attackRange = 50
+    def stateMachine(self):
+        self.stateTimer += 1
+        if(self.state=="happy"):
+            self.makeNest()
+            self.moodBehaviour()
+        elif(self.state=="searching_food"):
+            self.chooseFood() # move randomly
+            self.forcedMoodBehaviour()
+        elif(self.state=="approaching"):
+            if not self.target in world.entities+[world.player]: # more general maybe?
+                self.target = None
+                self.forcedMoodBehaviour()
+            else:
+                hyp = np.linalg.norm(self.target.pos - self.pos)
+                if hyp < self.attackRange:
+                    self.state = "retreat"
+                    self.stateTimer = 0
+                    self.grabbed = self.target
+                else:
+                    self.move()
+                    if hyp>senseRange:
+                        self.target = None
+                        self.forcedMoodBehaviour()
+            self.moodBehaviour()
+        
+        elif(self.state=="retreat"):
+            dPos = self.nest - self.pos
+
+            hyp = np.linalg.norm(dPos)
+            if hyp < self.attackRange/2:    
+                if(self.grabbed):
+                    self.grabbed.hurt(1)
+                self.forcedMoodBehaviour()
+                self.stateTimer = 0
+                self.grabbed = None
+                self.target = None
+            else:
+                if hyp>0:
+                    self.vel += dPos/hyp * (self.health/self.max_health) * 0.3
+                self.vel *= 0.97
+                self.angle = np.arctan2(self.vel[1],self.vel[0])
+                self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
+                if(self.grabbed):
+                    self.grabbed.pos=self.pos+self.vel*20
+                else:
+                    self.forcedMoodBehaviour()
+                    self.stateTimer = 0
+                    self.grabbed = None
+                    self.target = None
+                    
+    def hungryBehaviour(self):
+        self.state = "searching_food"
+    def happyBehaviour(self):
+        self.state="happy"    
 
     def move(self):
         """
@@ -1128,7 +1192,7 @@ class Dragonfly(Enemy):
         self.angle = np.arctan2(direction[1], direction[0])
         """
         self.stateTimer += 1
-        if self.state == 0:
+        if self.state == 0: #Nesting
 
             if random.random()<0.01:
                 self.target = random.choice(world.entities)
