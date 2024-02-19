@@ -184,7 +184,6 @@ class World():
                         bestDist = dist
                         target = possible
             else:
-                print(targets)
                 target = random.choice(targets)
 
         if(random.random()<extraPlayerChance and world.player.visible):
@@ -292,7 +291,6 @@ class World():
         for tile in tiles:
             if(tile[1]>200):        
                 if(crIntersect(pos, radius, tile[0],self.tilesize,self.tilesize)):
-                    print("collision")
                     return True
         
         return False
@@ -385,10 +383,9 @@ class Chunk():
                 for y in range(world.chunksize):
                     color = data[x][y]
                     if(np.array_equal(color,np.array([0,0,0,255]))):
-                        print("black")
+
                         self.tiles[y][x]=201
                     if(np.array_equal(color,np.array([255,0,0,255]))):
-                        print("red")
                         if(random.random()<0.5):
                             self.tiles[y][x]=1
 
@@ -441,8 +438,8 @@ class Chunk():
                     world.entities.append(Bush(pos,origin))
                 elif(tile==6): #Beetle
                     world.entities.append(Worm(pos,origin))
-                #elif(tile==7): #Dragonfly
-                #    world.entities.append(Dragonfly(pos,origin))
+                elif(tile==7): #Dragonfly
+                    world.entities.append(Dragonfly(pos,origin))
 
                 if(tile<100): #tile numbers under 100 are entities, over 100 are other types of tiles
                     self.tiles[x][y]=0
@@ -604,6 +601,10 @@ class Player(Entity):
                 print("UNKNOWN PLAYER STATE: ", self.state)
 
             self.pos += self.vel
+            if(world.tileCollision(self.pos,self.size)):
+                self.pos-=self.vel
+                sideComponent = np.dot(self.vel,np.array([[0,-1],[1,0]]))/np.linalg.norm(self.vel) # rotational matrix (90 degrees) 
+                self.vel = -0.1 * self.vel + (random.random()-0.5)*sideComponent*3 
         else:
             self.state = "driving"
             self.vehicle.move(pressed)
@@ -907,40 +908,49 @@ class Enemy(Entity): # or creature rather
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.vehicle = None # wut?
-        self.friction = 0.9
-        self.state = "happy" #Happy, approaching, searching_food
+        self.friction = 0.85
+        self.state = "unknown" #unknown, strolling approaching, searching_food
         self.stateTimer = 0
         self.target = None
         self.mood = "happy"
         self.senseRange = 500
         self.attackRange = 40
         self.speed = 0.2
+        self.huntChance = 1
 
     def update(self):
-        if self.health < self.max_health/2:
-            self.state = "dead"
-            self.image = self.deadImage
-        #random check modd
-        #self.checkMood()
+        
+        self.deathCheck()
         self.stateMachine()
+        self.move()
+        #friction and collision
         self.vel *= self.friction
         self.pos += self.vel
         if(world.tileCollision(self.pos,self.size)):
             self.pos-=self.vel
-            self.vel = -0.1 * self.vel
-        
+            sideComponent = np.dot(self.vel,np.array([[0,-1],[1,0]]))/np.linalg.norm(self.vel) # rotational matrix (90 degrees) 
 
+            self.vel = -0.1 * self.vel + (random.random()-0.5)*sideComponent*3
         # inbounds
-        #self.pos=world.setInbounds(self.pos)
+    def deathCheck(self):
+        if self.health < self.max_health/2:
+            self.state = "dead"
+            self.image = self.deadImage
 
     def stateMachine(self):
         self.stateTimer += 1
-        if(self.state=="happy"):
-            self.move()
+        if(self.state=="unknown"):
             self.forcedMoodBehaviour()
+        elif(self.state=="strolling"):
+            self.moodBehaviour()
         elif(self.state=="searching_food"):
-            self.move() # move randomly
-            self.forcedMoodBehaviour()
+            if(random.random()<self.huntChance):            
+                self.target = self.findFood()
+                if self.target:
+                    if not self.target == self:
+                        self.state = "approaching"
+                        self.stateTimer = 0
+            self.moodBehaviour()
         elif(self.state=="approaching"):
             if not self.target in world.entities+[world.player]: # more general maybe?
                 self.target = None
@@ -951,14 +961,12 @@ class Enemy(Entity): # or creature rather
                     self.state = "attacking"
                     self.stateTimer = 0
                 else:
-                    self.move()
                     if hyp>self.senseRange:
                         self.target = None
                         self.forcedMoodBehaviour()
             self.moodBehaviour()
         elif(self.state=="attacking"):
             self.attack()
-
 
         #elif(self.state=="searching"):
     def forcedMoodBehaviour(self):
@@ -978,43 +986,48 @@ class Enemy(Entity): # or creature rather
     def scaredBehaviour(self):
         self.state="scared" #should flee instead
     def happyBehaviour(self):
-        self.state="happy"   
+        self.state="strolling"   
     def findFood(self):
-        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0.5)
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0)
     def hungryBehaviour(self):
-        self.target = self.findFood()
-        if self.target:
-            if not self.target == self:
-                self.state = "approaching"
-                self.stateTimer = 0
-            else:
-                target=None
-        else: 
-            self.state = "searching_food"        
+        self.state = "searching_food"        
     def checkMood(self):
         mood="happy"
         if(self.health<self.max_health*0.9):
             mood="hungry"
         # Add Afraid
         return mood
-    def moveToTarget(self):
-        dPos=self.target.pos - self.pos
+    def moveToTarget(self,speedFactor=2):
+        self.moveToPos(self.target.pos,speedFactor=speedFactor)
+    def moveToPos(self,pos,speedFactor=1):
+        dPos = pos - self.pos
         hyp=np.linalg.norm(dPos)
         if hyp>0:
-            self.vel += dPos/hyp * (self.health/(self.max_health/2)-1) * 0.4
-        self.vel *= 0.9
-        self.angle = np.arctan2(self.vel[1],self.vel[0])        
+            self.vel += dPos/hyp * (self.health/(self.max_health/2)-1) * self.speed * speedFactor
+        self.angle = np.arctan2(self.vel[1],self.vel[0])
+
     def move(self):
-        if self.state=="happy":
-            self.happyMove()
-        if self.state=="searching_food":
-            self.happyMove()
-        if self.state=="approaching":
+        if self.state=="strolling":
+            self.strollingMove()
+        elif self.state=="searching_food":
+            self.searchMove()
+        elif self.state=="approaching":
             self.moveToTarget()
-    def happyMove(self):
+        elif self.state=="retreating": #Dragonfly specific
+            self.moveToPos(self.nest,speedFactor=1) #movetohome?
+        elif self.state=="rotating": #Dragonfly specific
+            self.moveRotate()
+        else:
+            return
+        # only animates if moved
+        self.moveAnimation()
+    def moveAnimation(self):
+        pass
+    def searchMove(self):
+        self.strollingMove()
+    def strollingMove(self):
         self.angle += random.random()*0.2 - 0.1
         self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/(self.max_health/2)-1) * self.speed
-        self.vel *= 0.9
 
 
         
@@ -1060,10 +1073,12 @@ class Beetle(Enemy):
         self.image = Beetle.idleImages[0]
         self.size = 16
         self.health = 12
+        self.speed = 0.2
         self.max_health = self.health
-    def move(self):
-        super().move()
+    def moveAnimation(self):
         self.image = Beetle.idleImages[random.randint(0,1)]
+    def findFood(self):
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0.5)
     def attack(self):
         if self.stateTimer < 20: # prebite
             # face correctly
@@ -1093,13 +1108,13 @@ class Worm(Enemy):
         self.speed = 0.1
         self.senseRange = 400
     def findFood(self):
-        return world.getTarget(pos,distance=self.senseRange,includePlayer=True)
-    def happyMove(self):
-        super().happyMove()
-        self.image = Worm.idleImages[self.stateTimer%32 < 16]
-    def moveToTarget(self):
-        super().happyMove()
-        self.image = Worm.idleImages[self.stateTimer%16 < 8]
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=True)
+    def moveAnimation(self):
+        if(self.state=="strolling"):
+            self.image = Worm.idleImages[self.stateTimer%32 < 16]
+        if(self.state=="approaching"):
+            self.image = Worm.idleImages[self.stateTimer%16 < 8]
+
     def attack(self):
         if self.stateTimer < 10:
             self.image = self.biteImages[0]
@@ -1130,136 +1145,58 @@ class Dragonfly(Enemy):
         self.target = None
         self.senseRange = 800
         self.attackRange = 50
-    def stateMachine(self):
-        self.stateTimer += 1
-        if(self.state=="happy"):
-            self.makeNest()
-            self.moodBehaviour()
-        elif(self.state=="searching_food"):
-            self.chooseFood() # move randomly
-            self.forcedMoodBehaviour()
-        elif(self.state=="approaching"):
-            if not self.target in world.entities+[world.player]: # more general maybe?
-                self.target = None
-                self.forcedMoodBehaviour()
-            else:
-                hyp = np.linalg.norm(self.target.pos - self.pos)
-                if hyp < self.attackRange:
-                    self.state = "retreat"
-                    self.stateTimer = 0
-                    self.grabbed = self.target
-                else:
-                    self.move()
-                    if hyp>senseRange:
-                        self.target = None
-                        self.forcedMoodBehaviour()
-            self.moodBehaviour()
-        
-        elif(self.state=="retreat"):
-            dPos = self.nest - self.pos
-
-            hyp = np.linalg.norm(dPos)
-            if hyp < self.attackRange/2:    
-                if(self.grabbed):
-                    self.grabbed.hurt(1)
-                self.forcedMoodBehaviour()
-                self.stateTimer = 0
-                self.grabbed = None
-                self.target = None
-            else:
-                if hyp>0:
-                    self.vel += dPos/hyp * (self.health/self.max_health) * 0.3
-                self.vel *= 0.97
-                self.angle = np.arctan2(self.vel[1],self.vel[0])
-                self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
-                if(self.grabbed):
-                    self.grabbed.pos=self.pos+self.vel*20
-                else:
-                    self.forcedMoodBehaviour()
-                    self.stateTimer = 0
-                    self.grabbed = None
-                    self.target = None
-                    
+        self.speed = 0.3
+        self.friction = 0.9
+    def reset(self):
+        self.forcedMoodBehaviour()
+        self.stateTimer = 0
+        self.grabbed = None
+        self.target = None
+    def moveRotate(self):
+        if self.target and (not self.target==self):
+            dPos=self.target.pos - self.pos
+            self.angle = np.arctan2(dPos[1],dPos[0])
+        else:
+            self.angle += 0.02 
     def hungryBehaviour(self):
-        self.state = "searching_food"
+        self.state = "rotating"
     def happyBehaviour(self):
-        self.state="happy"    
+        self.state="rotating"    
+    def stateMachine(self):
+        super().stateMachine()
 
-    def move(self):
-        """
-        direction = world.player.pos - self.pos
-        self.vel = direction/np.linalg.norm(direction)
-        self.angle = np.arctan2(direction[1], direction[0])
-        """
-        self.stateTimer += 1
-        if self.state == 0: #Nesting
-
+        if(self.state=="rotating"):
             if random.random()<0.01:
-                self.target = random.choice(world.entities)
-                if(random.random()<0.05):
-                    self.target=world.player
-
-                if not self.target == self:
-                    dPos=self.target.pos - self.pos
-                    self.angle = np.arctan2(dPos[1],dPos[0])
+                if(self.mood=="happy"):
+                    self.target = world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,condition=lambda x:not isinstance(x,Enemy))
+                elif(self.mood =="hungry"):
+                    self.target = world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,condition=lambda x:isinstance(x,Enemy),extraPlayerChance=0.05)
             
-            if not self.target:
-                self.angle += 0.02
-            #self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * 0.1
-            #self.vel *= 0.9
-            self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
-
             if random.random()<0.01 and self.target:
                 if not self.target == self:
-                    dPos = self.target.pos - self.pos
-                    hyp = np.linalg.norm(dPos)
-                    self.state = 1 # attack
+                    self.state = "approaching"
                     self.stateTimer = 0
 
-        elif self.state == 1:
-            if not self.target in world.entities+[world.player]:
-                self.state = 0
-                self.target = None
-            else:
-                dPos = self.target.pos - self.pos
-                hyp = np.linalg.norm(dPos)
-                if hyp < 50:
-
-                    self.state = 2
-                    self.stateTimer = 0
-                    self.grabbed = self.target
-
-                else:
-                    if hyp>0:
-                        self.vel += dPos/hyp * (self.health/self.max_health) * 0.6
-                    self.vel *= 0.99
-                    self.angle = np.arctan2(self.vel[1],self.vel[0])
-                    self.image = Dragonfly.idleImages[(self.stateTimer%8)//2]
-
-        elif self.state == 2:
-            dPos = self.nest - self.pos
-
-            hyp = np.linalg.norm(dPos)
-            if hyp < 20:
+        
+        elif(self.state=="retreating"):
+            if np.linalg.norm(self.nest - self.pos) < self.attackRange/2: #close enough to nest   
                 if(self.grabbed):
                     self.grabbed.hurt(1)
-                self.state = 0
-                self.stateTimer = 0
-                self.grabbed = None
-                self.target = None
+                self.reset()
             else:
-                if hyp>0:
-                    self.vel += dPos/hyp * (self.health/self.max_health) * 0.3
-                self.vel *= 0.97
-                self.angle = np.arctan2(self.vel[1],self.vel[0])
-                self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
                 if(self.grabbed):
-                    self.grabbed.pos=self.pos+self.vel*20
+                    self.grabbed.pos=self.pos+self.vel*20 # maybe janky
                 else:
-                    self.state = 0
-                    self.stateTimer = 0
-                    self.grabbed = None
-                    self.target = None
+                    self.reset()
+    def moveAnimation(self):
+        if(self.state=="approaching"):
+            self.image = Dragonfly.idleImages[(self.stateTimer%8)//2]
+        elif(self.state=="retreating" or self.state=="rotating"):
+            self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
+    def attack(self):
+        self.state = "retreating"
+        self.stateTimer = 0
+        self.grabbed = self.target     
 
 class Vehicle(Entity):
     def __init__(self, pos,origin):
