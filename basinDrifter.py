@@ -355,6 +355,9 @@ class Chunk():
         elif random.random()<0.2:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 6 # worm
+        elif random.random()<0.2:
+            for i in range(random.randint(6,9)):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 8 # armadillo
         elif random.random()<0.1:
             for i in range(random.randint(1,2)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 7 # dragonfly
@@ -440,6 +443,8 @@ class Chunk():
                     world.entities.append(Worm(pos,origin))
                 elif(tile==7): #Dragonfly
                     world.entities.append(Dragonfly(pos,origin))
+                elif(tile==8): #Armadillo
+                    world.entities.append(Armadillo(pos,origin))
 
                 if(tile<100): #tile numbers under 100 are entities, over 100 are other types of tiles
                     self.tiles[x][y]=0
@@ -1240,6 +1245,46 @@ class Dragonfly(Enemy):
         self.state = "retreating"
         self.stateTimer = 0
         self.grabbed = self.target     
+
+class Armadillo(Enemy):
+    idleImages = [loadImage("things/armadillo/armadillo1.png"),loadImage("things/armadillo/armadillo2.png")]
+    biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
+    deadImage = loadImage("things/armadillo/dead.png")
+
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
+        self.image = self.idleImages[0]
+        self.size = 16
+        self.health = 10
+        self.max_health = 10
+        self.speed = 0.1
+        self.senseRange = 400
+        self.av = 0
+        self.still = False
+        self.stateTimer=random.randint(0,16)
+        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player) or isinstance(x,Vehicle)) and not x==self and not x==self.target and not isinstance(x,Armadillo)
+    def findFood(self):
+        return world.getTarget(self.pos,distance=self.senseRange,condition=lambda x:isinstance(x,Bush))
+    def moveAnimation(self):
+            self.image = self.idleImages[self.stateTimer%32 < 16]
+    def strollingMove(self):
+        if(self.stateTimer%16==0):
+            self.av = random.random()*0.1 - 0.05
+        if(self.stateTimer%64==0):
+            if(random.random()<0.5):
+                self.still=True
+            else:
+                self.still=False
+        
+        if(not self.still):
+            self.angle +=self.av
+            self.vel += np.array([np.cos(self.angle),np.sin(self.angle)]) * (self.health/(self.max_health/2)-1) * self.speed
+    def attack(self):
+        if self.stateTimer == 10:
+            if self.target:
+                self.target.hurt(0.5)
+                self.heal(1)
+            self.forcedMoodBehaviour()
 
 class Vehicle(Entity):
     def __init__(self, pos,origin):
