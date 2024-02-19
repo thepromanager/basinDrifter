@@ -918,6 +918,7 @@ class Enemy(Entity): # or creature rather
         self.speed = 0.2
         self.huntChance = 1
         self.threat = None
+        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self and not x==self.target
 
     def update(self):
         
@@ -995,7 +996,7 @@ class Enemy(Entity): # or creature rather
     def findFood(self):
         return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0)
     def findClosestThreat(self):
-        return world.getTarget(self.pos,distance=self.senseRange/4,includePlayer=True,condition=lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self,closest=True)
+        return world.getTarget(self.pos,distance=self.senseRange/4,includePlayer=True,condition=self.isThreat,closest=True)
     def hungryBehaviour(self):
         self.state = "searching_food"        
     def checkMood(self):
@@ -1098,6 +1099,7 @@ class Beetle(Enemy):
         self.health = 12
         self.speed = 0.2
         self.max_health = self.health
+        self.isThreat = lambda x:(isinstance(x,Beetle) or isinstance(x,Dragonfly) or isinstance(x,Vehicle)) and not x==self and not x==self.target
     def moveAnimation(self):
         self.image = Beetle.idleImages[random.randint(0,1)]
     def findFood(self):
@@ -1130,6 +1132,7 @@ class Worm(Enemy):
         self.max_health = 5
         self.speed = 0.1
         self.senseRange = 400
+        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player) or isinstance(x,Vehicle)) and not x==self and not x==self.target
     def findFood(self):
         return world.getTarget(self.pos,distance=self.senseRange,includePlayer=True)
     def moveAnimation(self):
@@ -1170,6 +1173,7 @@ class Dragonfly(Enemy):
         self.attackRange = 50
         self.speed = 0.3
         self.friction = 0.9
+        self.isThreat = lambda x:(isinstance(x,Vehicle) or isinstance(x,Dragonfly)) and not x==self and not x==self.target
     def reset(self):
         self.forcedMoodBehaviour()
         self.stateTimer = 0
@@ -1199,6 +1203,7 @@ class Dragonfly(Enemy):
                 if not self.target == self:
                     self.state = "approaching"
                     self.stateTimer = 0
+            self.moodBehaviour()
 
         
         elif(self.state=="retreating"):
