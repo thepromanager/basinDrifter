@@ -485,6 +485,12 @@ class Entity():
     def draw(self): 
         #print("in entity:", self, self.image)
         pygame.draw.circle(gameDisplay,(255,0,0),world.camera.get_screen_pos(self.pos),self.size)
+        if(isinstance(self,Enemy)):
+            pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos)+np.array([-20,-40]),world.camera.get_screen_pos(self.pos)+np.array([20,-40]),4)
+            hplength=max(0,40*(self.health/(self.max_health/2)-1))
+            if(hplength):
+                pygame.draw.line(gameDisplay,(255,0,0),world.camera.get_screen_pos(self.pos)+np.array([-20,-40]),world.camera.get_screen_pos(self.pos)+np.array([-20+hplength,-40]),4)
+
         world.camera.blitImage(gameDisplay, self.image, self.pos, (self.imageSize//2,self.imageSize//2), self.angle)
         
         
@@ -494,6 +500,8 @@ class Entity():
             self.die()
         else:
             self.health -= damage
+    def heal(self, damage):
+        self.health=min(self.max_health, self.health+damage)
     def die(self):
         if self in world.entities:
             world.entities.remove(self)
@@ -919,9 +927,13 @@ class Enemy(Entity): # or creature rather
         self.huntChance = 1
         self.threat = None
         self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self and not x==self.target
+    def hunger(self):
+        if(random.random()<0.003 and not self.state == "dead"): 
+            self.hurt(0.2)
 
     def update(self):
         
+        self.hunger()
         self.deathCheck()
         self.stateMachine()
         self.move()
@@ -1001,7 +1013,7 @@ class Enemy(Entity): # or creature rather
         self.state = "searching_food"        
     def checkMood(self):
         mood="happy"
-        if(self.health<self.max_health*0.9):
+        if(self.health<self.max_health*0.95):
             mood="hungry"
         if(self.findClosestThreat()):
             mood="scared"
@@ -1114,6 +1126,7 @@ class Beetle(Enemy):
                 hyp = np.linalg.norm(self.target.pos - self.pos)
                 if hyp < 40:
                     self.target.hurt(4)
+                    self.heal(2)
                     # add hunger
         elif self.stateTimer < 60: # ending lag
             self.image = self.biteImages[1]
@@ -1138,7 +1151,7 @@ class Worm(Enemy):
     def moveAnimation(self):
         if(self.state=="strolling"):
             self.image = Worm.idleImages[self.stateTimer%32 < 16]
-        if(self.state=="approaching"):
+        if(self.state=="approaching" or self.state=="fleeing"):
             self.image = Worm.idleImages[self.stateTimer%16 < 8]
 
     def attack(self):
@@ -1147,6 +1160,7 @@ class Worm(Enemy):
         elif self.stateTimer == 10:
             if self.target:
                 self.target.hurt(2)
+                self.heal(1)
         elif self.stateTimer < 45:
             self.image = self.biteImages[1]
         else:
@@ -1157,7 +1171,7 @@ class Worm(Enemy):
                 self.state = "approaching"
 class Dragonfly(Enemy):
     idleImages = [loadImage("things/dragonfly/dragonfly.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyL.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyLR.png",size=gridSize*2),loadImage("things/dragonfly/dragonflyR.png",size=gridSize*2)]
-    deadImage = loadImage("things/worm/dead.png")
+    deadImage = loadImage("things/dragonfly/dead.png",size=gridSize*2)
     #biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
@@ -1210,6 +1224,7 @@ class Dragonfly(Enemy):
             if np.linalg.norm(self.nest - self.pos) < self.attackRange/2: #close enough to nest   
                 if(self.grabbed):
                     self.grabbed.hurt(1)
+                    self.heal(1)
                 self.reset()
             else:
                 if(self.grabbed):
@@ -1217,7 +1232,7 @@ class Dragonfly(Enemy):
                 else:
                     self.reset()
     def moveAnimation(self):
-        if(self.state=="approaching"):
+        if(self.state=="approaching" or self.state=="fleeing"):
             self.image = Dragonfly.idleImages[(self.stateTimer%8)//2]
         elif(self.state=="retreating" or self.state=="rotating"):
             self.image = Dragonfly.idleImages[(self.stateTimer%32)//8]
