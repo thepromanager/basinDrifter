@@ -917,6 +917,7 @@ class Enemy(Entity): # or creature rather
         self.attackRange = 40
         self.speed = 0.2
         self.huntChance = 1
+        self.threat = None
 
     def update(self):
         
@@ -967,6 +968,9 @@ class Enemy(Entity): # or creature rather
             self.moodBehaviour()
         elif(self.state=="attacking"):
             self.attack()
+        elif(self.state=="fleeing"):
+            self.threat=self.findClosestThreat()
+            self.moodBehaviour()
 
         #elif(self.state=="searching"):
     def forcedMoodBehaviour(self):
@@ -984,27 +988,41 @@ class Enemy(Entity): # or creature rather
         if(not mood==newMood):
             self.forcedMoodBehaviour()            
     def scaredBehaviour(self):
-        self.state="scared" #should flee instead
+        self.threat=self.findClosestThreat()
+        self.state="fleeing" #should flee instead
     def happyBehaviour(self):
         self.state="strolling"   
     def findFood(self):
         return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0)
+    def findClosestThreat(self):
+        return world.getTarget(self.pos,distance=self.senseRange/4,includePlayer=True,condition=lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self,closest=True)
     def hungryBehaviour(self):
         self.state = "searching_food"        
     def checkMood(self):
         mood="happy"
         if(self.health<self.max_health*0.9):
             mood="hungry"
+        if(self.findClosestThreat()):
+            mood="scared"
         # Add Afraid
         return mood
     def moveToTarget(self,speedFactor=2):
         self.moveToPos(self.target.pos,speedFactor=speedFactor)
+    def moveFromThreat(self,speedFactor=2):
+        self.moveFromPos(self.threat.pos,speedFactor=speedFactor)
     def moveToPos(self,pos,speedFactor=1):
         dPos = pos - self.pos
         hyp=np.linalg.norm(dPos)
         if hyp>0:
             self.vel += dPos/hyp * (self.health/(self.max_health/2)-1) * self.speed * speedFactor
         self.angle = np.arctan2(self.vel[1],self.vel[0])
+    def moveFromPos(self,pos,speedFactor=1):
+        dPos = pos - self.pos
+        hyp=np.linalg.norm(dPos)
+        if hyp>0:
+            self.vel -= dPos/hyp * (self.health/(self.max_health/2)-1) * self.speed * speedFactor
+        self.angle = np.arctan2(self.vel[1],self.vel[0])
+
 
     def move(self):
         if self.state=="strolling":
@@ -1013,6 +1031,11 @@ class Enemy(Entity): # or creature rather
             self.searchMove()
         elif self.state=="approaching":
             self.moveToTarget()
+        elif self.state=="fleeing":
+            if(self.threat):
+                self.moveFromThreat()
+            else:
+                print("why am i fleeing?", self)    
         elif self.state=="retreating": #Dragonfly specific
             self.moveToPos(self.nest,speedFactor=1) #movetohome?
         elif self.state=="rotating": #Dragonfly specific
