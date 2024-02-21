@@ -286,7 +286,7 @@ class World():
             for y in range(-n,n+1):
                 offsetpos=pos+np.array([x*self.tilesize,y*self.tilesize])
                 chunk = world.getChunk(offsetpos)
-                if chunk.tiles: 
+                if chunk and chunk.tiles: 
                     tiles.append((chunk.getTilePosfromPos(offsetpos),self.getTile(offsetpos)))
         for tile in tiles:
             if(tile[1]>200):        
@@ -375,22 +375,28 @@ class Chunk():
         for road in self.roads:
             self.makeRoad(road[0],road[1])
         if(self.ends>0):
-            img = Image.open("assets/textures/blueprints/structure_groove.png")
+            structure_name = random.choice(["structure_groove","structure_house","structure_hut"])
+            img = Image.open("assets/textures/blueprints/"+structure_name+".png")
             img.load()
             data = np.asarray( img, dtype="int32" )
             if(random.random()<0.5):
                 data = np.fliplr(data)
             for i in range(random.randint(0,3)):
                 data = np.rot90(data)
+            randomizedEnemyType = random.choice([2,6,7,8])
             for x in range(world.chunksize):
                 for y in range(world.chunksize):
                     color = data[x][y]
                     if(np.array_equal(color,np.array([0,0,0,255]))):
 
                         self.tiles[y][x]=201
+                    if(np.array_equal(color,np.array([0,255,0,255]))):
+                        if(random.random()<0.5):
+                            self.tiles[y][x]=random.choice([1]) #bombs? ammo? fuel dunks?
+
                     if(np.array_equal(color,np.array([255,0,0,255]))):
                         if(random.random()<0.5):
-                            self.tiles[y][x]=1
+                            self.tiles[y][x]=randomizedEnemyType
 
         self.visited=True
     def makeRoad(self,start,end):
@@ -478,7 +484,7 @@ class Entity():
     
     def __init__(self, pos,origin):
         self.origin=origin
-        self.pos = pos
+        self.pos = pos*1 # VERY IMPORTANT *1
         self.angle = 0.
         self.vel = np.array([0.0,0.0])
         self.size = 16 
@@ -487,7 +493,13 @@ class Entity():
         self.visible = True
         self.state = "unknown"
     def update(self):
+        #print(self, self.pos, self.vel)
         self.pos += self.vel
+        if(world.tileCollision(self.pos,self.size) and np.linalg.norm(self.vel)>0):
+            self.pos-=self.vel
+            sideComponent = np.dot(self.vel,np.array([[0,-1],[1,0]]))/np.linalg.norm(self.vel) # rotational matrix (90 degrees) 
+
+            self.vel = -0.1 * self.vel + (random.random()-0.5)*sideComponent*3
     def draw(self): 
         #print("in entity:", self, self.image)
         pygame.draw.circle(gameDisplay,(255,0,0),world.camera.get_screen_pos(self.pos),self.size)
@@ -528,7 +540,7 @@ class Player(Entity):
     punch2Image = loadImage("player/punch2.png")
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0)) # what is this hack!?
-        self.speed = 0.2
+        self.speed = 0.4
         self.image = Player.idleImage
         self.vehicle = None
         self.state = "walking"
@@ -545,8 +557,8 @@ class Player(Entity):
         if self.vehicle==None:
             self.stateTimer += 1
             if self.state == "tumbling":
-                self.health = max(0, np.linalg.norm(self.vel)*0.01)
-                self.vel *= 0.99
+                self.health = max(0, self.health-np.linalg.norm(self.vel)*0.01)
+                self.vel *= 0.98
                 self.image = Player.sidleImage
                 self.angle = random.random()*np.pi*2
                 if np.linalg.norm(self.vel)<2:
@@ -593,6 +605,8 @@ class Player(Entity):
                 if self.stateTimer==10:
                     facingOffset = np.array([np.cos(self.angle),np.sin(self.angle)])
                     self.vel = facingOffset * 2
+                if self.stateTimer==15:
+                    facingOffset = np.array([np.cos(self.angle),np.sin(self.angle)])
                     for entity in world.entities:
                         dist = np.linalg.norm(entity.pos - (self.pos+facingOffset*20) )
                         if dist<20+entity.size:
@@ -666,7 +680,7 @@ class Player(Entity):
             self.angle = np.arctan2(direction[1], direction[0])
 
         self.vel += direction * (self.health/self.max_health) * self.speed
-        self.vel *= 0.9
+        self.vel *= 0.8
 
 
     def throwBomb(self):
@@ -719,7 +733,7 @@ class Player(Entity):
     def refuelVehicle(self):
         if self.fuelDunks>0:
             bestVehicle = world.getTarget(self.pos,distance=50,condition=lambda x:isinstance(x,Vehicle),closest=True)
-            bestVehicle.fuel = min(bestVehicle.maxfuel, bestVehicle.fuel + 1000)
+            bestVehicle.fuel = min(bestVehicle.maxfuel, bestVehicle.fuel + 3000)
             self.fuelDunks -= 1
 
     def enterClosestVehicle(self):
@@ -754,7 +768,6 @@ class Bomb(Entity):
 
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0)) #"what is this hack!??"
-        self.pos = pos*1
         self.state = "idle"
         self.stateTimer = 0
         self.friction = 0.9
@@ -766,7 +779,7 @@ class Bomb(Entity):
 
     def update(self):
         self.stateTimer += 1
-        self.pos += self.vel
+        super().update()
         self.vel *= self.friction
 
         if self.state == "idle":
@@ -814,7 +827,6 @@ class Fuel(Entity):
 
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0)) #"what is this hack!??"
-        self.pos = pos*1
         self.state = "idle"
         #self.stateTimer = 0
         self.friction = 0.86
@@ -825,7 +837,7 @@ class Fuel(Entity):
 
     def update(self):
         #self.stateTimer += 1
-        self.pos += self.vel
+        super().update()
         self.vel *= self.friction
 
         if self.state == "idle":
@@ -896,7 +908,6 @@ class Bullet(Entity):
 
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0)) #"what is this hack!??"
-        self.pos = pos*1
         #self.state = "idle"
         #self.stateTimer = 0
         self.friction = 0.9
@@ -907,7 +918,7 @@ class Bullet(Entity):
 
     def update(self):
         #self.stateTimer += 1
-        self.pos += self.vel
+        super().update()
         self.vel *= self.friction
 
         if True:
@@ -945,12 +956,7 @@ class Enemy(Entity): # or creature rather
         self.move()
         #friction and collision
         self.vel *= self.friction
-        self.pos += self.vel
-        if(world.tileCollision(self.pos,self.size)):
-            self.pos-=self.vel
-            sideComponent = np.dot(self.vel,np.array([[0,-1],[1,0]]))/np.linalg.norm(self.vel) # rotational matrix (90 degrees) 
-
-            self.vel = -0.1 * self.vel + (random.random()-0.5)*sideComponent*3
+        super().update()
         # inbounds
     def deathCheck(self):
         if self.health < self.max_health/2:
@@ -1307,8 +1313,8 @@ class Vehicle(Entity):
         #self.drift = 
         self.image = None
 
-        self.fuel = 2000
-        self.maxfuel = 2000
+        self.fuel = 5000
+        self.maxfuel = 5000
 
     def direction(self,shift=0):
         return np.array([np.cos(self.angle+shift),np.sin(self.angle+shift)])
