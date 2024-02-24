@@ -325,7 +325,7 @@ class World():
 class Chunk():
     groundImage=loadImage("tiles/ground.png",size=World.groundSize)
     sandImage=loadImage("tiles/sand.png",size=World.groundSize)
-    roadImage=loadImage("tiles/roadc.png",size=World.tilesize)
+    roadImage=loadImage("tiles/roadc.png",size=World.tilesize).convert()
     wallImage=loadImage("tiles/wall.png",size=World.tilesize)
     def __init__(self, seed,gridpos,chunktype):
         self.seed=seed
@@ -732,8 +732,9 @@ class Player(Entity):
     def refuelVehicle(self):
         if self.fuelDunks>0:
             bestVehicle = world.getTarget(self.pos,distance=50,condition=lambda x:isinstance(x,Vehicle),closest=True)
-            bestVehicle.fuel = min(bestVehicle.maxfuel, bestVehicle.fuel + 3000)
-            self.fuelDunks -= 1
+            if bestVehicle:
+                bestVehicle.fuel = min(bestVehicle.maxfuel, bestVehicle.fuel + 3000)
+                self.fuelDunks -= 1
 
     def enterClosestVehicle(self):
         # enter
@@ -967,7 +968,8 @@ class Enemy(Entity): # or creature rather
         if(self.state=="unknown"):
             self.forcedMoodBehaviour()
         elif(self.state=="strolling"):
-            self.moodBehaviour()
+            if random.random()<0.1:
+                self.moodBehaviour()
         elif(self.state=="searching_food"):
             if(random.random()<self.huntChance):            
                 self.target = self.findFood()
