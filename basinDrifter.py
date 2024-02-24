@@ -491,6 +491,7 @@ class Entity():
         self.image = None
         self.health = 10
         self.visible = True
+        self.state = "unknown"
     def update(self):
         #print(self, self.pos, self.vel)
         self.pos += self.vel
@@ -943,7 +944,7 @@ class Enemy(Entity): # or creature rather
         self.speed = 0.2
         self.huntChance = 1
         self.threat = None
-        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self and not x==self.target
+        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self and not x==self.target and not x.state=="dead"
     def hunger(self):
         if(random.random()<0.003 and not self.state == "dead"): 
             self.hurt(0.2)
@@ -1019,7 +1020,7 @@ class Enemy(Entity): # or creature rather
     def happyBehaviour(self):
         self.state="strolling"   
     def findFood(self):
-        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0)
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0,condition=lambda x:not x==self)
     def findClosestThreat(self):
         return world.getTarget(self.pos,distance=self.senseRange/4,includePlayer=True,condition=self.isThreat,closest=True)
     def hungryBehaviour(self):
@@ -1124,11 +1125,11 @@ class Beetle(Enemy):
         self.health = 12
         self.speed = 0.2
         self.max_health = self.health
-        self.isThreat = lambda x:(isinstance(x,Beetle) or isinstance(x,Dragonfly) or isinstance(x,Vehicle)) and not x==self and not x==self.target
+        self.isThreat = lambda x:(isinstance(x,Beetle) or isinstance(x,Dragonfly) or isinstance(x,Vehicle)) and not x==self and not x==self.target and not x.state=="dead"
     def moveAnimation(self):
         self.image = Beetle.idleImages[random.randint(0,1)]
     def findFood(self):
-        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0.5)
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0.5, condition=lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self)
     def attack(self):
         if self.stateTimer < 20: # prebite
             # face correctly
@@ -1158,9 +1159,9 @@ class Worm(Enemy):
         self.max_health = 5
         self.speed = 0.1
         self.senseRange = 400
-        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player) or isinstance(x,Vehicle)) and not x==self and not x==self.target
+        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player) or isinstance(x,Vehicle)) and not x==self and not x==self.target and not x.state=="dead" and not isinstance(x,Worm)
     def findFood(self):
-        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=True)
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,condition=lambda x:x.state=="dead" and not x==self)
     def moveAnimation(self):
         if(self.state=="strolling"):
             self.image = Worm.idleImages[self.stateTimer%32 < 16]
@@ -1200,7 +1201,7 @@ class Dragonfly(Enemy):
         self.attackRange = 50
         self.speed = 0.3
         self.friction = 0.9
-        self.isThreat = lambda x:(isinstance(x,Vehicle) or isinstance(x,Dragonfly)) and not x==self and not x==self.target
+        self.isThreat = lambda x:(isinstance(x,Vehicle) or isinstance(x,Dragonfly)) and not x==self and not x==self.target and not x.state=="dead"
     def reset(self):
         self.forcedMoodBehaviour()
         self.stateTimer = 0
@@ -1270,7 +1271,7 @@ class Armadillo(Enemy):
         self.av = 0
         self.still = False
         self.stateTimer=random.randint(0,16)
-        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player) or isinstance(x,Vehicle)) and not x==self and not x==self.target and not isinstance(x,Armadillo)
+        self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player) or isinstance(x,Vehicle)) and not x==self and not x==self.target and not isinstance(x,Armadillo) and not x.state=="dead"
     def findFood(self):
         return world.getTarget(self.pos,distance=self.senseRange,condition=lambda x:isinstance(x,Bush))
     def moveAnimation(self):
