@@ -346,22 +346,22 @@ class Chunk():
     def generateTiles(self):
         random.seed(self.seed)
         self.tiles=[[0 for i in range(World.chunksize)] for j in range(World.chunksize)] #easy spatial lookup but slow iteration?
-        if random.random()<0.2:
+        if random.random()<0.4:
             for i in range(random.randint(4,10)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 5 # bush
-        elif random.random()<0.2:
+        elif random.random()<0.3:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 2 # beetle
-        elif random.random()<0.2:
+        elif random.random()<0.4:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 6 # worm
-        elif random.random()<0.2:
+        elif random.random()<0.4:
             for i in range(random.randint(6,9)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 8 # armadillo
-        elif random.random()<0.1:
+        elif random.random()<0.2:
             for i in range(random.randint(1,2)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 7 # dragonfly
-        elif random.random()<0.5:
+        elif random.random()<0.1:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 1 # box
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 201 # wall
@@ -374,8 +374,17 @@ class Chunk():
         
         for road in self.roads:
             self.makeRoad(road[0],road[1])
-        if(self.ends>0):
-            structure_name = random.choice(["structure_groove","structure_house","structure_hut"])
+
+        if (self.gridpos[0] == world.worldsize//2 and self.gridpos[1] == world.worldsize//2):
+            startOfGameChunk = True
+        else:
+            startOfGameChunk = False
+        if(self.ends>0) or startOfGameChunk:
+            if startOfGameChunk:
+                structure_name = "starting_house"
+                self.tiles[0][7]=3
+            else:
+                structure_name = random.choice(["structure_groove","structure_house","structure_hut"])
             img = Image.open("assets/textures/blueprints/"+structure_name+".png")
             img.load()
             data = np.asarray( img, dtype="int32" )
@@ -1096,8 +1105,10 @@ class Box(Entity):
 
     def die(self):
         super().die()
-        for i in range(random.randint(1,5)):
-            loot = random.choice([Bomb,Bullet,Bullet, Fuel])(self.pos)
+        k = random.randint(1,4)
+        loots = random.choices([Bullet,Bomb,Fuel], weights = [5, 1, 1], k = k)
+        for i in range(k):
+            loot = loots[i](self.pos)
             loot.vel = np.array([random.uniform(-2,2),random.uniform(-2,2)])
             world.entities.append(loot)
 
