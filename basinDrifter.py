@@ -1133,10 +1133,10 @@ class Beetle(Enemy):
         super().__init__(pos,origin)
         self.image = Beetle.idleImages[0]
         self.size = 16
-        self.health = 12
+        self.max_health = 12
+        self.health = random.uniform(0.5, 1)*self.max_health
         self.speed = 0.2
-        self.max_health = self.health
-        self.isThreat = lambda x:(isinstance(x,Beetle) or isinstance(x,Dragonfly) or isinstance(x,Vehicle)) and not x==self and not x==self.target and not x.state=="dead"
+        self.isThreat = lambda x:(isinstance(x,Beetle) or isinstance(x,Dragonfly)) and not x==self and not x==self.target and not x.state=="dead"
     def moveAnimation(self):
         self.image = Beetle.idleImages[random.randint(0,1)]
     def findFood(self):
@@ -1166,8 +1166,8 @@ class Worm(Enemy):
         super().__init__(pos,origin)
         self.image = Worm.idleImages[0]
         self.size = 13
-        self.health = 5
         self.max_health = 5
+        self.health = random.uniform(0.5, 1)*self.max_health
         self.speed = 0.1
         self.senseRange = 400
         self.isThreat = lambda x:(isinstance(x,Enemy) or isinstance(x,Player) or isinstance(x,Vehicle)) and not x==self and not x==self.target and not x.state=="dead" and not isinstance(x,Worm)
@@ -1203,8 +1203,8 @@ class Dragonfly(Enemy):
         self.image = Dragonfly.idleImages[0]
         self.imageSize = gridSize*2
         self.size = 32
-        self.health = 17
         self.max_health = 17
+        self.health = random.uniform(0.5, 1)*self.max_health
         self.grabbed = None
         self.nest = pos*1
         self.target = None
@@ -1212,7 +1212,7 @@ class Dragonfly(Enemy):
         self.attackRange = 50
         self.speed = 0.3
         self.friction = 0.9
-        self.isThreat = lambda x:(isinstance(x,Vehicle) or isinstance(x,Dragonfly)) and not x==self and not x==self.target and not x.state=="dead"
+        self.isThreat = lambda x:(isinstance(x,Dragonfly)) and not x==self and not x==self.target and not x.state=="dead"
     def reset(self):
         self.forcedMoodBehaviour()
         self.stateTimer = 0
@@ -1265,7 +1265,6 @@ class Dragonfly(Enemy):
         self.state = "retreating"
         self.stateTimer = 0
         self.grabbed = self.target     
-
 class Armadillo(Enemy):
     idleImages = [loadImage("things/armadillo/armadillo1.png"),loadImage("things/armadillo/armadillo2.png")]
     biteImages = [loadImage("things/worm/bite1.png"),loadImage("things/worm/bite2.png")]
@@ -1275,8 +1274,8 @@ class Armadillo(Enemy):
         super().__init__(pos,origin)
         self.image = self.idleImages[0]
         self.size = 16
-        self.health = 10
         self.max_health = 10
+        self.health = random.uniform(0.5, 1)*self.max_health
         self.speed = 0.1
         self.senseRange = 400
         self.av = 0
