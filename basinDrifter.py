@@ -28,7 +28,7 @@ gridSize = 64
 gameDisplay = pygame.display.set_mode((screenWidth, screenHeight))
 clock = pygame.time.Clock()
 
-def loadImage(textureName, size=gridSize):
+def loadImage(textureName, size=gridSize, convert=False):
     name = os.path.join("assets/textures", textureName)
     image = pygame.image.load(name).convert_alpha()
     image = pygame.transform.scale(image, (size, size))
@@ -323,10 +323,10 @@ class World():
         return np.array([x,y])
 
 class Chunk():
-    groundImage=loadImage("tiles/ground.png",size=World.groundSize)
-    sandImage=loadImage("tiles/sand.png",size=World.groundSize)
+    groundImage=loadImage("tiles/ground.png",size=World.groundSize).convert()
+    sandImage=loadImage("tiles/sand.png",size=World.groundSize).convert()
     roadImage=loadImage("tiles/roadc.png",size=World.tilesize).convert()
-    wallImage=loadImage("tiles/wall.png",size=World.tilesize)
+    wallImage=loadImage("tiles/wall.png",size=World.tilesize).convert()
     def __init__(self, seed,gridpos,chunktype):
         self.seed=seed
         self.tiles=None
@@ -352,10 +352,10 @@ class Chunk():
         elif random.random()<0.3:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 2 # beetle
-        elif random.random()<0.4:
+        elif random.random()<0.3:
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 6 # worm
-        elif random.random()<0.4:
+        elif random.random()<0.3:
             for i in range(random.randint(6,9)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 8 # armadillo
         elif random.random()<0.2:
@@ -365,6 +365,9 @@ class Chunk():
             for i in range(random.randint(2,5)):
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 1 # box
                 self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 201 # wall
+        elif random.random()<0.1:
+            for i in range(random.randint(1,2)):
+                self.tiles[random.randint(0,World.chunksize-1)][random.randint(0,World.chunksize-1)] = 9 # snake
                 
         else:
             for i in range(random.randint(0,random.randint(0,1))):
@@ -454,12 +457,14 @@ class Chunk():
                     world.entities.append(RaceCar(pos,origin))
                 elif(tile==5): #Bush
                     world.entities.append(Bush(pos,origin))
-                elif(tile==6): #Beetle
+                elif(tile==6): #Worms
                     world.entities.append(Worm(pos,origin))
                 elif(tile==7): #Dragonfly
                     world.entities.append(Dragonfly(pos,origin))
                 elif(tile==8): #Armadillo
                     world.entities.append(Armadillo(pos,origin))
+                elif(tile==9): #Armadillo
+                    world.entities.append(SnakeHead(pos,origin))
 
                 if(tile<100): #tile numbers under 100 are entities, over 100 are other types of tiles
                     self.tiles[x][y]=0
@@ -511,7 +516,8 @@ class Entity():
             self.vel = -0.1 * self.vel + (random.random()-0.5)*sideComponent*3
     def draw(self): 
         #print("in entity:", self, self.image)
-        pygame.draw.circle(gameDisplay,(255,0,0),world.camera.get_screen_pos(self.pos),self.size)
+        if self.health < self.max_health/2:
+            pygame.draw.circle(gameDisplay,(255,0,0),world.camera.get_screen_pos(self.pos),self.size)
         if(isinstance(self,Enemy)):
             pygame.draw.line(gameDisplay,(0,0,0),world.camera.get_screen_pos(self.pos)+np.array([-20,-40]),world.camera.get_screen_pos(self.pos)+np.array([20,-40]),4)
             hplength=max(0,40*(self.health/(self.max_health/2)-1))
@@ -549,7 +555,7 @@ class Player(Entity):
     punch2Image = loadImage("player/punch2.png")
     def __init__(self, pos):
         super().__init__(pos,(None,(0,0),0)) # what is this hack!?
-        self.speed = 0.4
+        self.speed = 0.7
         self.image = Player.idleImage
         self.vehicle = None
         self.state = "walking"
@@ -562,6 +568,9 @@ class Player(Entity):
         self.fuelDunks = 0
 
     def update(self):
+        if(random.random()<0.02 and not self.state == "dead"): 
+            self.hurt(0.1)
+
         pressed = pygame.key.get_pressed()
         if self.vehicle==None:
             self.stateTimer += 1
@@ -1097,6 +1106,7 @@ class Box(Entity):
         self.image = Box.idleImage
         self.size = 20
         self.health = 3
+        self.max_health = 3
         self.friction = 0.9
 
     def update(self):
@@ -1119,12 +1129,109 @@ class Bush(Entity):
         self.image = Bush.idleImage
         self.size = 15
         self.health = 2
+        self.max_health = 2
         self.friction = 0.9
 
     def update(self):
         super().update()
         self.vel *= self.friction
 
+class SnakeHead(Enemy):
+    idleImages = [loadImage("things/snake/head.png",size=gridSize*2)]
+    biteImages = [loadImage("things/snake/bite1.png",size=gridSize*2),loadImage("things/snake/bite2.png",size=gridSize*2)]
+    deadImage = loadImage("things/snake/head.png",size=gridSize*2)
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
+        self.tail = SnakeTail(pos = pos, origin = origin)
+        self.tail.head = self
+        world.entities.append(self.tail)
+        self.imageSize = gridSize*2
+        self.image = SnakeHead.idleImages[0]
+        self.size = 32
+        self.max_health = 80
+        self.health = random.uniform(0.5, 1)*self.max_health
+        self.speed = 0.8
+        self.isThreat = lambda x:(isinstance(x,Beetle) or isinstance(x,Dragonfly)) and not x==self and not x==self.target and not x.state=="dead"
+    def moveAnimation(self):
+        self.image = self.idleImages[random.randint(0,0)]
+    def findFood(self):
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=True,extraPlayerChance=0.5, condition=lambda x:((isinstance(x,Enemy) or isinstance(x,Player)) and (not isinstance(x,SnakeTail))) and not x==self)
+    def update(self):
+        super().update()
+        self.tail.follow(self)
+    def draw(self):
+        super().draw()
+        #self.tail.draw()
+    def die(self):
+        super().die()
+        self.tail.die()
+    def attack(self):
+        if self.stateTimer < 20: # prebite
+            # face correctly
+            #self.moveToTarget()
+            if random.random()<0.02:
+                for e in world.entities:
+                    if np.linalg.norm(e.pos - self.pos)< 60:
+                        if e != self and not isinstance(e, SnakeTail):
+                            e.hurt(1)
+            self.image = self.biteImages[0]
+        elif self.stateTimer == 20: # bite
+            if self.target:
+                hyp = np.linalg.norm(self.target.pos - self.pos)
+                if hyp < 170:
+                    self.target.hurt(7)
+                    self.heal(6)
+                    # add hunger
+        elif self.stateTimer < 40: # ending lag
+            self.image = self.biteImages[1]
+        else:
+            self.state = "approaching"
+class SnakeTail(Enemy):
+    idleImages = [loadImage("things/snake/tail.png",size=gridSize*2)]
+    deadImage = loadImage("things/snake/tail.png",size=gridSize*2)
+    def __init__(self, pos,origin):
+        super().__init__(pos,origin)
+        if random.random()<0.9:
+            self.tail = SnakeTail(pos = pos, origin = origin)
+            self.tail.head = self
+            world.entities.append(self.tail)
+        else:
+            self.tail = None
+        self.imageSize = gridSize*2
+        self.image = SnakeTail.idleImages[0]
+        self.size = 16
+        self.max_health = 19
+        self.health = random.uniform(0.5, 1)*self.max_health
+        self.speed = 0.3
+        self.isThreat = lambda x:(isinstance(x,Beetle) or isinstance(x,Dragonfly)) and not x==self and not x==self.target and not x.state=="dead"
+    def moveAnimation(self):
+        self.image = self.idleImages[random.randint(0,0)]
+    # findFood(self):
+     #   return world.getTarget(self.pos,distance=self.senseRange,includePlayer=True,extraPlayerChance=0.5, condition=lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self)
+    def update(self):
+        #super().update()
+        if self.tail:
+            self.tail.follow(self)
+        self.health = self.head.health
+        self.max_health = self.head.max_health
+    def follow(self, other):
+        pos_diff = (self.pos - other.pos)
+        dist_to_other2 = np.linalg.norm(pos_diff)
+        angle_to_other = np.arctan2(-pos_diff[1], -pos_diff[0])
+        follow_dist = self.size*2
+        if dist_to_other2 > follow_dist:
+            shorten_factor = follow_dist / dist_to_other2
+            self.pos = other.pos + pos_diff*shorten_factor
+        self.angle = angle_to_other
+    def attack(self):
+        self.state = "unknown"
+
+    def die(self):
+        super().die()
+        if self.tail:
+            self.tail.die()
+    def hurt(self, val):
+        self.head.hurt(val)
 class Beetle(Enemy):
     idleImages = [loadImage("things/beetle/beetle1.png"),loadImage("things/beetle/beetle2.png")]
     biteImages = [loadImage("things/beetle/bite1.png"),loadImage("things/beetle/bite2.png")]
@@ -1135,12 +1242,12 @@ class Beetle(Enemy):
         self.size = 16
         self.max_health = 12
         self.health = random.uniform(0.5, 1)*self.max_health
-        self.speed = 0.2
+        self.speed = 0.3
         self.isThreat = lambda x:(isinstance(x,Beetle) or isinstance(x,Dragonfly)) and not x==self and not x==self.target and not x.state=="dead"
     def moveAnimation(self):
         self.image = Beetle.idleImages[random.randint(0,1)]
     def findFood(self):
-        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=False,extraPlayerChance=0.5, condition=lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self)
+        return world.getTarget(self.pos,distance=self.senseRange,includePlayer=True,extraPlayerChance=0.5, condition=lambda x:(isinstance(x,Enemy) or isinstance(x,Player)) and not x==self)
     def attack(self):
         if self.stateTimer < 20: # prebite
             # face correctly
@@ -1210,7 +1317,7 @@ class Dragonfly(Enemy):
         self.target = None
         self.senseRange = 800
         self.attackRange = 50
-        self.speed = 0.3
+        self.speed = 0.5
         self.friction = 0.9
         self.isThreat = lambda x:(isinstance(x,Dragonfly)) and not x==self and not x==self.target and not x.state=="dead"
     def reset(self):
@@ -1248,8 +1355,9 @@ class Dragonfly(Enemy):
         elif(self.state=="retreating"):
             if np.linalg.norm(self.nest - self.pos) < self.attackRange/2: #close enough to nest   
                 if(self.grabbed):
-                    self.grabbed.hurt(1)
-                    self.heal(1)
+                    val = random.random()*5
+                    self.grabbed.hurt(val)
+                    self.heal(val)
                 self.reset()
             else:
                 if(self.grabbed):
@@ -1309,6 +1417,7 @@ class Vehicle(Entity):
     def __init__(self, pos,origin):
         super().__init__(pos,origin)
         self.health = 20
+        self.max_health = 20
         self.topspeed = 5.0
         self.acc = 0.1
 
